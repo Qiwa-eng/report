@@ -57,7 +57,12 @@ const translations = {
     settingsButton: '⚙️ Настройки',
     complaintChooseLine: '📞 Выберите линию, на которую хотите пожаловаться:',
     complaintLineChosen: ({ lineTitle, lineId }) =>
-      `🔎 Линия ${lineTitle || lineId} выбрана! Опишите проблему одним сообщением 👇`,
+      [
+        '🔎 Линия выбрана!',
+        `📞 Линия: ${lineTitle || lineId}`,
+        '',
+        '📝 Опишите проблему одним сообщением 👇',
+      ].join('\n'),
     complaintSent: '✅ Жалоба отправлена! Спасибо за обратную связь 🙏',
     complaintError: '⚠️ Не удалось отправить жалобу. Сообщите администратору.',
     notActive: '⏳ Ваша заявка ещё на рассмотрении. Ждите решения, пожалуйста.',
@@ -202,7 +207,13 @@ const translations = {
     complaintSipReminder:
       '📟 Пожалуйста, выберите конкретный номер с помощью кнопок ниже.',
     complaintSipChosen: ({ sip, lineTitle, lineId }) =>
-      `🎉 Номер ${sip} выбран для линии ${lineTitle || lineId}! Опишите проблему одним сообщением 👇`,
+      [
+        '🎉 Номер выбран!',
+        `📟 ${sip}`,
+        `📞 Линия: ${lineTitle || lineId}`,
+        '',
+        '📝 Опишите проблему одним сообщением 👇',
+      ].join('\n'),
     complaintSipInvalid: '⚠️ Выберите номер из списка.',
     complaintDescriptionReminder:
       '💬 Отправьте текст жалобы одним сообщением или нажмите «❌ Отмена».',
