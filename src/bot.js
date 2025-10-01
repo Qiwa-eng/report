@@ -322,6 +322,12 @@ const USER_STATUS_ICONS = {
   declined: '❌',
 };
 
+const APPLICATION_STATUS_LABELS = {
+  pending: '⏳ На модерации',
+  approved: '✅ Подтверждена',
+  declined: '❌ Отклонена',
+};
+
 const MAX_SIP_OPTIONS = 25;
 
 function encodeCallbackComponent(value) {
@@ -671,6 +677,56 @@ function formatUserButtonLabel(user) {
   }
 
   return `${icon} ID ${user.id}`;
+}
+
+function formatApplicationButtonLabel(application, user) {
+  if (user) {
+    return `${application.id} • ${formatUserButtonLabel(user)}`;
+  }
+
+  return `${application.id} • ID ${application.userId}`;
+}
+
+function formatApplicationCard(application, user) {
+  const userLabel = formatUserLabel(user || { id: application.userId });
+  const languageLabel = user?.language
+    ? LANGUAGE_NAMES[user.language] || user.language
+    : '—';
+  const createdAt = formatDateForLanguage(application.createdAt, 'ru');
+  const updatedAt = formatDateForLanguage(application.updatedAt, 'ru');
+  const userStatusLabel = user
+    ? USER_STATUS_LABELS[user.status] || user.status
+    : null;
+  const lines = [
+    '📄 Заявка на доступ',
+    `🆔 ID: ${application.id}`,
+    `🙋‍♂️ Пользователь: ${userLabel}`,
+    `⏳ Статус заявки: ${
+      APPLICATION_STATUS_LABELS[application.status] || application.status
+    }`,
+  ];
+
+  if (userStatusLabel) {
+    lines.push(`👤 Статус пользователя: ${userStatusLabel}`);
+  } else {
+    lines.push('👤 Пользователь не найден в базе.');
+  }
+
+  lines.push(`🌐 Язык: ${languageLabel}`);
+
+  if (user) {
+    const lineIds = Array.isArray(user.lineIds) ? user.lineIds : [];
+    lines.push(`📞 Линии: ${lineIds.length ? lineIds.join(', ') : '—'}`);
+  }
+
+  lines.push(`📅 Создана: ${createdAt || '—'}`);
+  lines.push(`🕒 Обновлена: ${updatedAt || '—'}`);
+
+  if (application.comment) {
+    lines.push('', `💬 Комментарий: ${application.comment}`);
+  }
+
+  return lines.filter(Boolean).join('\n');
 }
 
 async function editOrReply(ctx, text, keyboard) {
@@ -1774,15 +1830,56 @@ bot.action('admin:applications:list', async (ctx) => {
     return;
   }
 
-  const items = await Promise.all(
+  const applicationsWithUsers = await Promise.all(
     pending.map(async (application) => {
       const user = await repository.getUser(application.userId);
-      return `${application.id}: ${formatUserLabel(user || { id: application.userId })}`;
+      return { application, user };
     })
   );
 
+  const items = applicationsWithUsers.map(({ application, user }) =>
+    `${application.id}: ${formatUserLabel(user || { id: application.userId })}`
+  );
+
+  const keyboard = Markup.inlineKeyboard(
+    applicationsWithUsers.map(({ application, user }) => [
+      Markup.button.callback(
+        formatApplicationButtonLabel(application, user),
+        `admin:applications:open:${application.id}`
+      ),
+    ])
+  );
+
   await ctx.answerCbQuery();
-  await ctx.reply(t('ru', 'pendingApplicationsList', { items }));
+  await editOrReply(ctx, t('ru', 'pendingApplicationsList', { items }), keyboard);
+});
+
+bot.action(/^admin:applications:open:(.+)$/, async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const applicationId = ctx.match[1];
+  const application = await repository.getApplicationById(applicationId);
+
+  if (!application) {
+    await ctx.answerCbQuery(t('ru', 'applicationNotFound'), { show_alert: true });
+    return;
+  }
+
+  const user = await repository.getUser(application.userId);
+
+  const keyboard = Markup.inlineKeyboard([
+    [
+      Markup.button.callback('✅ Подтвердить', `application:confirm:${application.id}`),
+      Markup.button.callback('❌ Отклонить', `application:decline:${application.id}`),
+    ],
+    [Markup.button.callback('⬅️ Назад', 'admin:applications:list')],
+  ]);
+
+  await ctx.answerCbQuery();
+  await editOrReply(ctx, formatApplicationCard(application, user), keyboard);
 });
 
 bot.action('admin:lines:menu', async (ctx) => {
