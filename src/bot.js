@@ -67,7 +67,7 @@ const translations = {
     lineGroupSet: ({ lineTitle, groupId }) =>
       `📡 Для линии ${lineTitle} установлен чат ${groupId}.`,
     lineCreated: ({ lineTitle, lineId }) => `🆕 Линия ${lineTitle || lineId} создана.`,
-        complainLogTitle: ({ userLabel, lineTitle, lineId }) =>
+    complainLogTitle: ({ userLabel, lineTitle, lineId }) =>
       `🚨 Жалоба от ${userLabel}\n📞 Линия: ${lineTitle || lineId}`,
     complainLogSip: ({ sip }) => `📟 SIP: ${sip}`,
     complainLogMessageLabel: '📝 Сообщение:',
@@ -78,10 +78,9 @@ const translations = {
     complaintSipReminder:
       '📟 Пожалуйста, выберите конкретный номер с помощью кнопок ниже.',
     complaintSipChosen: ({ sip, lineTitle, lineId }) =>
-    complaintSipInvalid: '⚠️ Выберите номер из списка.',
       `🎉 Номер ${sip} выбран для линии ${lineTitle || lineId}! Опишите проблему одним сообщением 👇`,
+    complaintSipInvalid: '⚠️ Выберите номер из списка.',
     pendingApplicationsList: ({ items }) => `📥 Ожидающие заявки\n${items.join('\n')}`,
-,
     pendingApplicationsEmpty: '✨ Нет активных заявок.',
     userListFooter: ({ count }) => `\n... и ещё ${count}`,
     stats: ({ totalUsers, activeUsers, bannedUsers, totalLines, pending }) =>
@@ -171,10 +170,9 @@ const translations = {
       `📟 Pick a specific number from ${lineTitle || lineId}`,
     complaintSipReminder: '📟 Please pick a specific number using the buttons below.',
     complaintSipChosen: ({ sip, lineTitle, lineId }) =>
-    complaintSipInvalid: '⚠️ Please choose a number from the list.',
       `🎉 Number ${sip} selected for ${lineTitle || lineId}! Describe the issue in one message 👇`,
+    complaintSipInvalid: '⚠️ Please choose a number from the list.',
     pendingApplicationsList: ({ items }) => `📥 Pending applications\n${items.join('\n')}`,
-,
     pendingApplicationsEmpty: '✨ No pending applications.',
     userListFooter: ({ count }) => `\n... plus ${count} more`,
     stats: ({ totalUsers, activeUsers, bannedUsers, totalLines, pending }) =>
