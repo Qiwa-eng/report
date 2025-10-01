@@ -208,6 +208,133 @@ const translations = {
   },
 };
 
+const MAX_SIP_OPTIONS = 25;
+
+function encodeCallbackComponent(value) {
+  return encodeURIComponent(String(value));
+}
+
+function decodeCallbackComponent(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch (error) {
+    return value;
+  }
+}
+
+function chunk(array, size) {
+  const result = [];
+  for (let index = 0; index < array.length; index += size) {
+    result.push(array.slice(index, index + size));
+  }
+  return result;
+}
+
+function parseSipRange(value) {
+  if (!value) {
+    return [];
+  }
+
+  const matches = [...String(value).matchAll(/(\d{2,})\s*[-–—]\s*(\d{2,})/g)];
+
+  for (const match of matches) {
+    const start = Number(match[1]);
+    const end = Number(match[2]);
+
+    if (
+      Number.isFinite(start) &&
+      Number.isFinite(end) &&
+      end >= start &&
+      end - start + 1 <= MAX_SIP_OPTIONS
+    ) {
+      const options = [];
+      for (let cursor = start; cursor <= end; cursor += 1) {
+        options.push(String(cursor));
+      }
+      if (options.length) {
+        return options;
+      }
+    }
+  }
+
+  return [];
+}
+
+function getSipOptions(line) {
+  if (!line) {
+    return [];
+  }
+
+  const sources = [line.title, line.id];
+  for (const source of sources) {
+    const options = parseSipRange(source);
+    if (options.length) {
+      return options;
+    }
+  }
+
+  return [];
+}
+
+function formatLineButtonLabel(line) {
+  if (line.title && line.title !== line.id) {
+    return `📞 ${line.title} • #${line.id}`;
+  }
+  return `📞 ${line.id}`;
+}
+
+function buildSipKeyboard(line, options, language) {
+  const rows = chunk(options, 3).map((group) =>
+    group.map((sip) =>
+      Markup.button.callback(
+        `☎️ ${sip}`,
+        `complaintSip:${encodeCallbackComponent(line.id)}:${encodeCallbackComponent(sip)}`
+      )
+    )
+  );
+
+  rows.push([
+    Markup.button.callback(
+      t(language, 'backButton'),
+      `complaintBack:${encodeCallbackComponent(line.id)}`
+    ),
+  ]);
+
+  return Markup.inlineKeyboard(rows);
+}
+
+async function sendComplaintLineMenu(ctx, user, language, { edit = false } = {}) {
+  const lines = await repository.getLines();
+  const userLines = lines.filter((line) => user.lineIds.includes(line.id));
+
+  if (!userLines.length) {
+    await ctx.reply(t(language, 'notLinked'));
+    return;
+  }
+
+  const keyboard = Markup.inlineKeyboard(
+    userLines.map((line) => [
+      Markup.button.callback(
+        formatLineButtonLabel(line),
+        `complaint:${encodeCallbackComponent(line.id)}`
+      ),
+    ])
+  );
+
+  const text = t(language, 'complaintPrompt');
+
+  if (edit) {
+    try {
+      await ctx.editMessageText(text, keyboard);
+    } catch (error) {
+      await ctx.reply(text, keyboard);
+    }
+    return;
+  }
+
+  await ctx.reply(text, keyboard);
+}
+
 const LANGUAGE_CODES = Object.keys(LANGUAGE_NAMES);
 
 function ensureLanguage(code) {
@@ -815,19 +942,7 @@ bot.hears(/жалоба|complaint/i, async (ctx) => {
     return;
   }
 
-  const lines = await repository.getLines();
-  const userLines = lines.filter((line) => user.lineIds.includes(line.id));
-
-  if (!userLines.length) {
-    await ctx.reply(t(language, 'notLinked'));
-    return;
-  }
-
-  const keyboard = Markup.inlineKeyboard(
-    userLines.map((line) => [Markup.button.callback(`${line.title} (${line.id})`, `complaint:${line.id}`)])
-  );
-
-  await ctx.reply(t(language, 'complaintPrompt'), keyboard);
+  await sendComplaintLineMenu(ctx, user, language);
 });
 
 bot.action(/^complaint:(.+)$/i, async (ctx) => {
