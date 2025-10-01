@@ -15,6 +15,23 @@ function now() {
   return new Date().toISOString();
 }
 
+function normalizeUsername(username) {
+  if (!username) {
+    return '';
+  }
+
+  return String(username).trim().replace(/^@+/, '').toLowerCase();
+}
+
+function formatDisplayUsername(username) {
+  const normalized = normalizeUsername(username);
+  if (!normalized) {
+    return '';
+  }
+
+  return `@${normalized}`;
+}
+
 async function upsertUser(userPayload) {
   const db = await readDb();
   const userId = Number(userPayload.id);
@@ -271,6 +288,245 @@ async function getDefaultStopWorkMessage() {
   return db.data.settings.defaultStopWorkMessage || null;
 }
 
+async function upsertColdProfiles(ownerId, lineId, items) {
+  const db = await readDb();
+  const owner = await assertUserExists(db, ownerId);
+  const line = db.data.lines.find((entry) => entry.id === lineId);
+
+  if (!line) {
+    throw new Error(`Line ${lineId} not found`);
+  }
+
+  const processedProfiles = [];
+  let created = 0;
+  let updated = 0;
+
+  const normalizedItems = items
+    .map((item) => ({
+      username: formatDisplayUsername(item.username),
+      normalizedUsername: normalizeUsername(item.username),
+      sip: String(item.sip || '').trim(),
+    }))
+    .filter((item) => item.normalizedUsername && item.sip);
+
+  for (const entry of normalizedItems) {
+    let profile = db.data.coldProfiles.find(
+      (item) => item.normalizedUsername === entry.normalizedUsername
+    );
+
+    if (!profile) {
+      profile = {
+        id: nanoid(10),
+        ownerId: owner.id,
+        lineId,
+        sip: entry.sip,
+        username: entry.username,
+        normalizedUsername: entry.normalizedUsername,
+        userId: null,
+        createdAt: now(),
+        updatedAt: now(),
+      };
+      db.data.coldProfiles.push(profile);
+      created += 1;
+    } else {
+      profile.ownerId = owner.id;
+      profile.lineId = lineId;
+      profile.sip = entry.sip;
+      profile.username = entry.username;
+      profile.updatedAt = now();
+      updated += 1;
+    }
+
+    processedProfiles.push(profile);
+
+    if (profile.userId) {
+      const coldUser = db.data.users.find(
+        (user) => Number(user.id) === Number(profile.userId)
+      );
+
+      if (coldUser) {
+        coldUser.lineIds = [lineId];
+        coldUser.status = 'active';
+        coldUser.updatedAt = now();
+      }
+
+      for (const item of db.data.lines) {
+        if (item.id === lineId) {
+          if (!item.userIds.includes(profile.userId)) {
+            item.userIds.push(profile.userId);
+          }
+          item.updatedAt = now();
+        } else {
+          const nextUserIds = item.userIds.filter(
+            (id) => Number(id) !== Number(profile.userId)
+          );
+          if (nextUserIds.length !== item.userIds.length) {
+            item.userIds = nextUserIds;
+            item.updatedAt = now();
+          }
+        }
+      }
+    }
+  }
+
+  line.updatedAt = now();
+  await writeDb(db);
+
+  return { created, updated, processed: processedProfiles.length, profiles: processedProfiles };
+}
+
+async function getColdProfilesByOwner(ownerId) {
+  const db = await readDb();
+  return db.data.coldProfiles.filter((item) => Number(item.ownerId) === Number(ownerId));
+}
+
+async function getColdProfileByUsername(username) {
+  const normalized = normalizeUsername(username);
+  if (!normalized) {
+    return null;
+  }
+
+  const db = await readDb();
+  return (
+    db.data.coldProfiles.find((item) => item.normalizedUsername === normalized) || null
+  );
+}
+
+async function setColdProfileUser(profileId, userId) {
+  const db = await readDb();
+  const profile = db.data.coldProfiles.find((item) => item.id === profileId);
+
+  if (!profile) {
+    throw new Error(`Cold profile ${profileId} not found`);
+  }
+
+  profile.userId = userId ? Number(userId) : null;
+  profile.updatedAt = now();
+  await writeDb(db);
+  return profile;
+}
+
+async function getColdProfileByUserId(userId) {
+  const db = await readDb();
+  return (
+    db.data.coldProfiles.find((item) => Number(item.userId) === Number(userId)) || null
+  );
+}
+
+async function createComplaint({ userId, lineId, sip, message, coldProfileId }) {
+  const db = await readDb();
+
+  const complaint = {
+    id: nanoid(10),
+    userId: Number(userId),
+    lineId,
+    sip: sip ? String(sip) : null,
+    message: message || '',
+    status: 'new',
+    coldProfileId: coldProfileId || null,
+    logChatId: null,
+    logMessageId: null,
+    createdAt: now(),
+    updatedAt: now(),
+  };
+
+  db.data.complaints.push(complaint);
+  await writeDb(db);
+  return complaint;
+}
+
+async function setComplaintLogInfo(complaintId, { chatId, messageId }) {
+  const db = await readDb();
+  const complaint = db.data.complaints.find((item) => item.id === complaintId);
+
+  if (!complaint) {
+    throw new Error(`Complaint ${complaintId} not found`);
+  }
+
+  complaint.logChatId = chatId ? Number(chatId) : null;
+  complaint.logMessageId = messageId ? Number(messageId) : null;
+  complaint.updatedAt = now();
+  await writeDb(db);
+  return complaint;
+}
+
+async function getComplaintById(complaintId) {
+  const db = await readDb();
+  return db.data.complaints.find((item) => item.id === complaintId) || null;
+}
+
+async function updateComplaintStatus(complaintId, status, actorId) {
+  const db = await readDb();
+  const complaint = db.data.complaints.find((item) => item.id === complaintId);
+
+  if (!complaint) {
+    throw new Error(`Complaint ${complaintId} not found`);
+  }
+
+  complaint.status = status;
+  complaint.resolvedBy = actorId ? Number(actorId) : null;
+  complaint.resolvedAt = now();
+  complaint.updatedAt = now();
+  await writeDb(db);
+  return complaint;
+}
+
+async function deleteComplaint(complaintId) {
+  const db = await readDb();
+  const index = db.data.complaints.findIndex((item) => item.id === complaintId);
+
+  if (index === -1) {
+    return false;
+  }
+
+  db.data.complaints.splice(index, 1);
+  await writeDb(db);
+  return true;
+}
+
+async function getSipStatistics() {
+  const db = await readDb();
+  const accumulator = new Map();
+
+  for (const complaint of db.data.complaints) {
+    if (!complaint.sip) {
+      continue;
+    }
+
+    const key = `${complaint.lineId}:::${complaint.sip}`;
+    if (!accumulator.has(key)) {
+      accumulator.set(key, {
+        lineId: complaint.lineId,
+        sip: complaint.sip,
+        total: 0,
+        resolved: 0,
+        cancelled: 0,
+      });
+    }
+
+    const record = accumulator.get(key);
+    record.total += 1;
+    if (complaint.status === 'resolved') {
+      record.resolved += 1;
+    }
+    if (complaint.status === 'cancelled') {
+      record.cancelled += 1;
+    }
+  }
+
+  return Array.from(accumulator.values()).sort((a, b) => {
+    if (b.total !== a.total) {
+      return b.total - a.total;
+    }
+
+    if (a.lineId !== b.lineId) {
+      return String(a.lineId).localeCompare(String(b.lineId));
+    }
+
+    return String(a.sip).localeCompare(String(b.sip));
+  });
+}
+
 module.exports = {
   upsertUser,
   setUserStatus,
@@ -293,4 +549,15 @@ module.exports = {
   getSettings,
   setDefaultStopWorkMessage,
   getDefaultStopWorkMessage,
+  upsertColdProfiles,
+  getColdProfilesByOwner,
+  getColdProfileByUsername,
+  setColdProfileUser,
+  getColdProfileByUserId,
+  createComplaint,
+  setComplaintLogInfo,
+  getComplaintById,
+  updateComplaintStatus,
+  deleteComplaint,
+  getSipStatistics,
 };

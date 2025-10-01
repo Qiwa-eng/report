@@ -14,6 +14,8 @@ const defaultData = {
   users: [],
   applications: [],
   admins: [],
+  coldProfiles: [],
+  complaints: [],
 };
 
 const clone = (value) =>

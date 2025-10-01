@@ -8,6 +8,9 @@ const bot = new Telegraf(config.botToken);
 const userStates = new Map();
 const adminStates = new Map();
 
+let crocoStickerIds = null;
+let crocoStickerPromise = null;
+
 const LANGUAGE_NAMES = {
   ru: 'Русский',
   en: 'English',
@@ -120,6 +123,13 @@ const translations = {
       ].join('\n'),
     complaintCancelButton: '❌ Отмена',
     complaintCancelled: '✅ Жалоба отменена. Возвращаем вас в главное меню.',
+    coldButton: '❄️ Холодки',
+    coldInstructions:
+      'Подключаете сюда холодку, и она может жаловаться сама, без вашей помощи.\nДля холодки будет только выбор языка и жалоба.',
+    coldNoProfiles: '❄️ Пока нет настроенных холодок. Обратитесь к администратору.',
+    coldListTitle: '📋 Подключённые холодки:',
+    coldProfileStatusPending: '⏳ ждёт подключения',
+    coldProfileStatusActive: '✅ подключена',
     complaintChooseSip: ({ lineTitle, lineId }) =>
       `📟 Выберите конкретный номер из диапазона ${lineTitle || lineId}`,
     complaintSipReminder:
@@ -129,6 +139,14 @@ const translations = {
     complaintSipInvalid: '⚠️ Выберите номер из списка.',
     complaintDescriptionReminder:
       '💬 Отправьте текст жалобы одним сообщением или нажмите «❌ Отмена».',
+    coldAdminChooseLine: 'Выберите линию для холодки:',
+    coldAdminNoLines: 'У пользователя нет привязанных линий.',
+    coldAdminUploadPrompt:
+      'Загрузите холодок в формате username;сип. Можно отправить несколько строк — каждая новая строка = отдельная холодка.',
+    coldAdminUploadInvalid:
+      '⚠️ Не удалось распознать ни одной записи. Используйте формат username;сип.',
+    coldAdminUploadSuccess: ({ processed, created, updated }) =>
+      `✅ Холодки обновлены. Обработано: ${processed}. Новых: ${created}. Обновлено: ${updated}.`,
     pendingApplicationsList: ({ items }) => `📥 Ожидающие заявки\n${items.join('\n')}`,
     pendingApplicationsEmpty: '✨ Нет активных заявок.',
     userListFooter: ({ count }) => `\n... и ещё ${count}`,
@@ -140,6 +158,10 @@ const translations = {
         `📞 Всего линий: ${totalLines}`,
         `⏳ Ожидающих заявок: ${pending}`,
       ].join('\n'),
+    sipStatsTitle: '📈 Статистика SIPов:',
+    sipStatsRow: ({ lineTitle, lineId, sip, total, resolved, cancelled }) =>
+      `• ${lineTitle || lineId} • SIP ${sip} — всего ${total}, решено ${resolved}, отклонено ${cancelled}`,
+    sipStatsEmpty: '📭 Пока нет жалоб с SIP номерами.',
     stopWorkStatus: ({ active, until, message }) =>
       `🚧 Стоп-ворк: ${active ? 'активен' : 'выключен'}${until ? `\n🗓 До: ${until}` : ''}${
         message ? `\n💬 Сообщение: ${message}` : ''
@@ -259,6 +281,13 @@ const translations = {
       ].join('\n'),
     complaintCancelButton: '❌ Cancel',
     complaintCancelled: '✅ Complaint cancelled. Back to the main menu.',
+    coldButton: '❄️ Cold agents',
+    coldInstructions:
+      'Connect your cold agent here so it can complain automatically without your help.\nA cold agent will only see the language selector and the complaint action.',
+    coldNoProfiles: '❄️ No cold agents configured yet. Ask an administrator.',
+    coldListTitle: '📋 Connected cold agents:',
+    coldProfileStatusPending: '⏳ waiting to connect',
+    coldProfileStatusActive: '✅ connected',
     complaintChooseSip: ({ lineTitle, lineId }) =>
       `📟 Pick a specific number from ${lineTitle || lineId}`,
     complaintSipReminder: '📟 Please pick a specific number using the buttons below.',
@@ -267,6 +296,14 @@ const translations = {
     complaintSipInvalid: '⚠️ Please choose a number from the list.',
     complaintDescriptionReminder:
       '💬 Please send your complaint text in a single message or tap “❌ Cancel”.',
+    coldAdminChooseLine: 'Choose a line for the cold agent:',
+    coldAdminNoLines: 'The user has no linked lines.',
+    coldAdminUploadPrompt:
+      'Upload cold agents in the format username;sip. You can send several lines — one per cold agent.',
+    coldAdminUploadInvalid:
+      '⚠️ No entries recognised. Please use the format username;sip.',
+    coldAdminUploadSuccess: ({ processed, created, updated }) =>
+      `✅ Cold agents updated. Processed: ${processed}. New: ${created}. Updated: ${updated}.`,
     pendingApplicationsList: ({ items }) => `📥 Pending applications\n${items.join('\n')}`,
     pendingApplicationsEmpty: '✨ No pending applications.',
     userListFooter: ({ count }) => `\n... plus ${count} more`,
@@ -278,6 +315,10 @@ const translations = {
         `📞 Lines: ${totalLines}`,
         `⏳ Pending apps: ${pending}`,
       ].join('\n'),
+    sipStatsTitle: '📈 SIP statistics:',
+    sipStatsRow: ({ lineTitle, lineId, sip, total, resolved, cancelled }) =>
+      `• ${lineTitle || lineId} • SIP ${sip} — total ${total}, resolved ${resolved}, declined ${cancelled}`,
+    sipStatsEmpty: '📭 No SIP complaints yet.',
     stopWorkStatus: ({ active, until, message }) =>
       `🚧 Stop-work: ${active ? 'enabled' : 'disabled'}${until ? `\n🗓 Until: ${until}` : ''}${
         message ? `\n💬 Message: ${message}` : ''
@@ -488,11 +529,57 @@ function formatDateForLanguage(isoString, language) {
   return date.toLocaleString(LOCALE_BY_LANGUAGE[language] || LOCALE_BY_LANGUAGE.ru);
 }
 
-function userKeyboard(language) {
-  return Markup.keyboard([
-    [{ text: t(language, 'complaintButton') }],
-    [{ text: t(language, 'settingsButton') }],
-  ]).resize();
+async function loadCrocoStickerIds() {
+  if (crocoStickerIds) {
+    return crocoStickerIds;
+  }
+
+  if (crocoStickerPromise) {
+    return crocoStickerPromise;
+  }
+
+  crocoStickerPromise = bot.telegram
+    .getStickerSet('Crocosaurus')
+    .then((set) => set?.stickers?.map((item) => item.file_id) || [])
+    .catch((error) => {
+      console.error('Failed to load Crocosaurus stickers', error);
+      return [];
+    })
+    .then((stickers) => {
+      crocoStickerIds = stickers;
+      return stickers;
+    })
+    .finally(() => {
+      crocoStickerPromise = null;
+    });
+
+  return crocoStickerPromise;
+}
+
+async function sendRandomCrocoSticker(ctx) {
+  try {
+    const stickers = await loadCrocoStickerIds();
+    if (!stickers.length) {
+      return;
+    }
+
+    const randomIndex = Math.floor(Math.random() * stickers.length);
+    const stickerId = stickers[randomIndex];
+    await ctx.replyWithSticker(stickerId);
+  } catch (error) {
+    console.error('Failed to send Crocosaurus sticker', error);
+  }
+}
+
+function userKeyboard(language, { showColdButton = false } = {}) {
+  const rows = [[{ text: t(language, 'complaintButton') }]];
+
+  if (showColdButton) {
+    rows.push([{ text: t(language, 'coldButton') }]);
+  }
+
+  rows.push([{ text: t(language, 'settingsButton') }]);
+  return Markup.keyboard(rows).resize();
 }
 
 function userSettingsKeyboard(language) {
@@ -518,16 +605,26 @@ function settingsInstructionsKeyboard(language) {
   ]);
 }
 
-function buildComplaintLogKeyboard(userId) {
+function buildComplaintLogKeyboard(complaintId, fallbackUserId) {
+  const identifier = complaintId
+    ? `id:${complaintId}`
+    : fallbackUserId !== undefined
+      ? `user:${fallbackUserId}`
+      : null;
+
+  if (!identifier) {
+    return Markup.inlineKeyboard([]);
+  }
+
   return Markup.inlineKeyboard([
     [
       Markup.button.callback(
         t('ru', 'complaintLogResolveButton'),
-        `complaintLog:resolve:${userId}`
+        `complaintLog:resolve:${identifier}`
       ),
       Markup.button.callback(
         t('ru', 'complaintLogCancelButton'),
-        `complaintLog:cancel:${userId}`
+        `complaintLog:cancel:${identifier}`
       ),
     ],
   ]);
@@ -845,14 +942,15 @@ function buildAdminUsersList(users, page = 0) {
   return { text, keyboard: Markup.inlineKeyboard(buttons), page: safePage };
 }
 
-function buildAdminUserDetailsKeyboard(user, page, isMuted) {
+function buildAdminUserDetailsKeyboard(user, page, isMuted, options = {}) {
+  const { showColdSetupButton = false } = options;
   const statusActiveLabel =
     user.status === 'active' ? '✅ Активен' : '✅ Активировать';
   const statusBannedLabel =
     user.status === 'banned' ? '⛔️ Заблокирован' : '⛔️ Забанить';
   const unmuteLabel = isMuted ? '🔊 Снять мут' : '🔊 Мут отсутствует';
 
-  return Markup.inlineKeyboard([
+  const rows = [
     [
       Markup.button.callback(
         statusActiveLabel,
@@ -871,8 +969,20 @@ function buildAdminUserDetailsKeyboard(user, page, isMuted) {
       Markup.button.callback('🔇 Мут 24ч', `admin:users:mute:24:${user.id}:${page}`),
       Markup.button.callback(unmuteLabel, `admin:users:unmute:${user.id}:${page}`),
     ],
-    [Markup.button.callback('⬅️ К списку', `admin:users:page:${page}`)],
-  ]);
+  ];
+
+  if (showColdSetupButton) {
+    rows.push([
+      Markup.button.callback(
+        '❄️ Настроить холодку',
+        `admin:users:cold:menu:${user.id}:${page}`
+      ),
+    ]);
+  }
+
+  rows.push([Markup.button.callback('⬅️ К списку', `admin:users:page:${page}`)]);
+
+  return Markup.inlineKeyboard(rows);
 }
 
 async function renderAdminUsersPage(ctx, page = 0) {
@@ -898,7 +1008,11 @@ async function renderAdminUserDetails(ctx, userId, page = 0) {
     return false;
   }
 
-  const lines = await repository.getLines();
+  const [lines, coldProfilesOwned, coldProfile] = await Promise.all([
+    repository.getLines(),
+    repository.getColdProfilesByOwner(user.id),
+    repository.getColdProfileByUserId(user.id),
+  ]);
   const lineTitles = user.lineIds
     .map((lineId) => {
       const line = lines.find((item) => item.id === lineId);
@@ -924,6 +1038,21 @@ async function renderAdminUserDetails(ctx, userId, page = 0) {
     `📞 Линии: ${lineTitles.length ? lineTitles.join(', ') : '—'}`,
   ];
 
+  if (coldProfile) {
+    const coldLine = lines.find((item) => item.id === coldProfile.lineId);
+    const coldLineLabel = coldLine ? coldLine.title || coldLine.id : coldProfile.lineId;
+    details.push(`❄️ Холодка: ${coldLineLabel} • SIP ${coldProfile.sip}`);
+
+    if (coldProfile.ownerId) {
+      const owner = await repository.getUser(coldProfile.ownerId);
+      const ownerLabel = owner ? formatUserLabel(owner) : coldProfile.ownerId;
+      details.push(`👤 Владелец: ${ownerLabel}`);
+    }
+  } else {
+    const coldCount = coldProfilesOwned.length;
+    details.push(`❄️ Холодок: ${coldCount || '—'}`);
+  }
+
   if (createdAt) {
     details.push(`🗓 Создан: ${createdAt}`);
   }
@@ -931,7 +1060,9 @@ async function renderAdminUserDetails(ctx, userId, page = 0) {
     details.push(`♻️ Обновлён: ${updatedAt}`);
   }
 
-  const keyboard = buildAdminUserDetailsKeyboard(user, page, muteState.muted);
+  const keyboard = buildAdminUserDetailsKeyboard(user, page, muteState.muted, {
+    showColdSetupButton: !coldProfile,
+  });
   await editOrReply(ctx, details.join('\n'), keyboard);
   return true;
 }
@@ -995,8 +1126,20 @@ async function ensureMuteState(user) {
 
 async function sendMainMenu(ctx, user) {
   const targetUser = user || (await repository.getUser(ctx.from.id));
+  if (!targetUser) {
+    return;
+  }
+
   const language = getUserLanguage(targetUser);
-  await ctx.reply(t(language, 'mainMenuPrompt'), userKeyboard(language));
+  const coldProfile = targetUser.id
+    ? await repository.getColdProfileByUserId(targetUser.id)
+    : null;
+  const showColdButton = targetUser.status === 'active' && !coldProfile;
+
+  await ctx.reply(
+    t(language, 'mainMenuPrompt'),
+    userKeyboard(language, { showColdButton })
+  );
 }
 async function processAdminState(ctx) {
   const state = adminStates.get(Number(ctx.from.id));
@@ -1230,6 +1373,53 @@ async function processAdminState(ctx) {
         setAdminState(ctx.from.id, null);
         break;
       }
+      case 'awaitingColdUpload': {
+        const { userId, lineId, page } = state.payload || {};
+        const rows = text
+          .split(/\r?\n/)
+          .map((row) => row.trim())
+          .filter(Boolean);
+
+        const entries = rows
+          .map((row) =>
+            row
+              .split(/[;,\t]+/)
+              .map((part) => part.trim())
+              .filter(Boolean)
+          )
+          .filter((parts) => parts.length >= 2)
+          .map((parts) => ({ username: parts[0], sip: parts[1] }));
+
+        if (!entries.length) {
+          await ctx.reply(t('ru', 'coldAdminUploadInvalid'));
+          return true;
+        }
+
+        try {
+          const result = await repository.upsertColdProfiles(userId, lineId, entries);
+
+          if (!result.processed) {
+            await ctx.reply(t('ru', 'coldAdminUploadInvalid'));
+            return true;
+          }
+
+          await ctx.reply(
+            t('ru', 'coldAdminUploadSuccess', {
+              processed: result.processed,
+              created: result.created,
+              updated: result.updated,
+            })
+          );
+        } catch (error) {
+          console.error('Failed to upsert cold profiles', error);
+          await ctx.reply(t('ru', 'genericError'));
+          return true;
+        }
+
+        setAdminState(ctx.from.id, null);
+        await renderAdminUserDetails(ctx, userId, page);
+        break;
+      }
       default:
         setAdminState(ctx.from.id, null);
         return false;
@@ -1335,6 +1525,7 @@ async function processUserState(ctx, providedUser) {
     }
 
     const sip = state.payload?.sip || null;
+    const coldProfileId = state.payload?.coldProfileId || null;
     const logParts = [
       t('ru', 'complainLogTitle', {
         userLabel: formatUserLabel(user),
@@ -1351,15 +1542,40 @@ async function processUserState(ctx, providedUser) {
 
     const logMessage = logParts.join('\n');
 
+    let complaintRecord = null;
+
     try {
-      await bot.telegram.sendMessage(
+      complaintRecord = await repository.createComplaint({
+        userId: user.id,
+        lineId: line.id,
+        sip,
+        message: textMessage,
+        coldProfileId,
+      });
+    } catch (error) {
+      console.error('Failed to store complaint record', error);
+    }
+
+    try {
+      const sentMessage = await bot.telegram.sendMessage(
         line.groupId,
         logMessage,
-        buildComplaintLogKeyboard(user.id)
+        buildComplaintLogKeyboard(complaintRecord?.id, user.id)
       );
       await ctx.reply(t(language, 'complaintSent'));
+      await sendRandomCrocoSticker(ctx);
+
+      if (complaintRecord) {
+        await repository.setComplaintLogInfo(complaintRecord.id, {
+          chatId: sentMessage.chat?.id,
+          messageId: sentMessage.message_id,
+        });
+      }
     } catch (error) {
       console.error('Failed to send complaint', error);
+      if (complaintRecord) {
+        await repository.deleteComplaint(complaintRecord.id);
+      }
       await ctx.reply(t(language, 'complaintError'));
     }
 
@@ -1371,7 +1587,21 @@ async function processUserState(ctx, providedUser) {
 }
 
 bot.start(async (ctx) => {
-  const user = await repository.upsertUser(ctx.from);
+  let user = await repository.upsertUser(ctx.from);
+
+  if (ctx.from.username) {
+    try {
+      const profile = await repository.getColdProfileByUsername(ctx.from.username);
+      if (profile && (!profile.userId || Number(profile.userId) === Number(user.id))) {
+        await repository.setColdProfileUser(profile.id, user.id);
+        await repository.attachUserToLine(user.id, profile.lineId);
+        await repository.setUserStatus(user.id, 'active');
+        user = await repository.getUser(user.id);
+      }
+    } catch (error) {
+      console.error('Failed to activate cold profile', error);
+    }
+  }
 
   if (!isAdmin(ctx.from.id) && (await isStopWork(ctx))) {
     clearUserState(ctx.from.id);
@@ -1401,6 +1631,7 @@ bot.start(async (ctx) => {
   const language = getUserLanguage(user);
 
   if (created) {
+    await sendRandomCrocoSticker(ctx);
     await ctx.reply(t(language, 'pendingApplied'));
     await notifyAdminsAboutApplication(user, application);
   } else {
@@ -1451,6 +1682,33 @@ bot.hears(/жалоба|complaint/i, async (ctx) => {
     return;
   }
 
+  const coldProfile = await repository.getColdProfileByUserId(user.id);
+  if (coldProfile) {
+    const line = await repository.getLine(coldProfile.lineId);
+    if (!line) {
+      await ctx.reply(t(language, 'lineMissing'));
+      return;
+    }
+
+    userStates.set(Number(user.id), {
+      type: 'awaitingComplaintDescription',
+      payload: {
+        lineId: line.id,
+        sip: coldProfile.sip,
+        coldProfileId: coldProfile.id,
+      },
+    });
+
+    const responseText = t(language, 'complaintSipChosen', {
+      sip: coldProfile.sip,
+      lineTitle: line.title,
+      lineId: line.id,
+    });
+
+    await ctx.reply(responseText);
+    return;
+  }
+
   await sendComplaintLineMenu(ctx, user, language);
 });
 
@@ -1484,6 +1742,68 @@ bot.hears(/настройки|settings/i, async (ctx) => {
   }
 
   await sendSettingsMenu(ctx, language);
+});
+
+bot.hears(/холодки|cold\s+agents?/i, async (ctx) => {
+  if (isAdmin(ctx.from.id)) {
+    return;
+  }
+
+  if (await isStopWork(ctx)) {
+    clearUserState(ctx.from.id);
+    return;
+  }
+
+  const user = await repository.getUser(ctx.from.id);
+  if (!user) {
+    await ctx.reply(t('ru', 'userNotFound'));
+    return;
+  }
+
+  const language = getUserLanguage(user);
+
+  if (user.status === 'banned') {
+    await ctx.reply(t(language, 'banned'));
+    return;
+  }
+
+  if (user.status !== 'active') {
+    await ctx.reply(t(language, 'notActive'));
+    return;
+  }
+
+  const coldProfile = await repository.getColdProfileByUserId(user.id);
+  if (coldProfile) {
+    await ctx.reply(t(language, 'genericError'));
+    return;
+  }
+
+  const [coldProfiles, lines] = await Promise.all([
+    repository.getColdProfilesByOwner(user.id),
+    repository.getLines(),
+  ]);
+
+  const lineMap = new Map(lines.map((line) => [line.id, line]));
+  const listItems = coldProfiles.map((profile) => {
+    const line = lineMap.get(profile.lineId);
+    const lineLabel = line ? line.title || line.id : profile.lineId;
+    const statusKey = profile.userId
+      ? 'coldProfileStatusActive'
+      : 'coldProfileStatusPending';
+    const status = t(language, statusKey);
+    const username = profile.username || `@${profile.normalizedUsername}`;
+    return `• ${username} — ${lineLabel}, SIP ${profile.sip} (${status})`;
+  });
+
+  const parts = [t(language, 'coldInstructions')];
+
+  if (listItems.length) {
+    parts.push('', t(language, 'coldListTitle'), ...listItems);
+  } else {
+    parts.push('', t(language, 'coldNoProfiles'));
+  }
+
+  await ctx.reply(parts.join('\n'));
 });
 
 bot.action('settings:language', async (ctx) => {
@@ -2010,6 +2330,83 @@ bot.action(/^admin:users:view:(\d+):(\d+)$/i, async (ctx) => {
   await ctx.answerCbQuery();
 });
 
+bot.action(/^admin:users:cold:menu:(\d+):(\d+)$/i, async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const userId = Number(ctx.match[1]);
+  const page = Number(ctx.match[2] || 0);
+  const user = await repository.getUser(userId);
+
+  if (!user) {
+    await ctx.answerCbQuery(t('ru', 'adminUsersNotFound'), { show_alert: true });
+    return;
+  }
+
+  const lines = await repository.getLines();
+  const userLines = lines.filter((line) => user.lineIds.includes(line.id));
+
+  if (!userLines.length) {
+    await ctx.answerCbQuery(t('ru', 'coldAdminNoLines'), { show_alert: true });
+    return;
+  }
+
+  const buttons = userLines.map((line) => [
+    Markup.button.callback(
+      formatLineButtonLabel(line),
+      `admin:users:cold:line:${userId}:${encodeCallbackComponent(line.id)}:${page}`
+    ),
+  ]);
+
+  buttons.push([
+    Markup.button.callback('⬅️ Назад', `admin:users:view:${userId}:${page}`),
+  ]);
+
+  await ctx.answerCbQuery();
+  await ctx.editMessageText(
+    t('ru', 'coldAdminChooseLine'),
+    Markup.inlineKeyboard(buttons)
+  );
+});
+
+bot.action(/^admin:users:cold:line:(\d+):([^:]+):(\d+)$/i, async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const userId = Number(ctx.match[1]);
+  const lineId = decodeCallbackComponent(ctx.match[2]);
+  const page = Number(ctx.match[3] || 0);
+
+  const [user, line] = await Promise.all([
+    repository.getUser(userId),
+    repository.getLine(lineId),
+  ]);
+
+  if (!user || !line) {
+    await ctx.answerCbQuery(t('ru', 'genericError'), { show_alert: true });
+    return;
+  }
+
+  setAdminState(ctx.from.id, {
+    type: 'awaitingColdUpload',
+    payload: { userId, lineId, page },
+  });
+
+  await ctx.answerCbQuery();
+  await ctx.reply(
+    [
+      `🧊 ${formatUserLabel(user)}`,
+      `📞 ${formatLineButtonLabel(line)}`,
+      '',
+      t('ru', 'coldAdminUploadPrompt'),
+    ].join('\n')
+  );
+});
+
 bot.action(/^admin:users:status:(active|banned):(\d+):(\d+)$/i, async (ctx) => {
   if (!isAdmin(ctx.from.id)) {
     await ctx.answerCbQuery();
@@ -2129,20 +2526,38 @@ bot.action('admin:stats', async (ctx) => {
   const users = await repository.getUsers();
   const lines = await repository.getLines();
   const pending = await repository.getPendingApplications();
+  const sipStats = await repository.getSipStatistics();
 
   const banned = users.filter((user) => user.status === 'banned').length;
   const active = users.filter((user) => user.status === 'active').length;
 
   await ctx.answerCbQuery();
-  await ctx.reply(
-    t('ru', 'stats', {
-      totalUsers: users.length,
-      activeUsers: active,
-      bannedUsers: banned,
-      totalLines: lines.length,
-      pending: pending.length,
-    })
-  );
+  const summary = t('ru', 'stats', {
+    totalUsers: users.length,
+    activeUsers: active,
+    bannedUsers: banned,
+    totalLines: lines.length,
+    pending: pending.length,
+  });
+
+  const lineMap = new Map(lines.map((line) => [line.id, line]));
+  const statsLines = sipStats.length
+    ? [
+        t('ru', 'sipStatsTitle'),
+        ...sipStats.map((item) =>
+          t('ru', 'sipStatsRow', {
+            lineTitle: lineMap.get(item.lineId)?.title,
+            lineId: item.lineId,
+            sip: item.sip,
+            total: item.total,
+            resolved: item.resolved,
+            cancelled: item.cancelled,
+          })
+        ),
+      ].join('\n')
+    : t('ru', 'sipStatsEmpty');
+
+  await ctx.reply([summary, '', statsLines].join('\n'));
 });
 
 bot.action('admin:stopwork:menu', async (ctx) => {
@@ -2255,7 +2670,7 @@ bot.action('admin:settings:show', async (ctx) => {
   );
 });
 
-bot.action(/^complaintLog:(resolve|cancel):(\d+)$/i, async (ctx) => {
+bot.action(/^complaintLog:(resolve|cancel):(.+)$/i, async (ctx) => {
   if (!isAdmin(ctx.from.id)) {
     await ctx.answerCbQuery(t('ru', 'complaintLogNoAccess'), {
       show_alert: true,
@@ -2264,6 +2679,7 @@ bot.action(/^complaintLog:(resolve|cancel):(\d+)$/i, async (ctx) => {
   }
 
   const action = ctx.match[1];
+  const identifier = ctx.match[2];
   const message = ctx.callbackQuery?.message;
   if (!message) {
     await ctx.answerCbQuery();
@@ -2281,6 +2697,31 @@ bot.action(/^complaintLog:(resolve|cancel):(\d+)$/i, async (ctx) => {
     return;
   }
 
+  if (identifier?.startsWith('id:')) {
+    const complaintId = identifier.slice(3);
+    if (complaintId) {
+      const complaint = await repository.getComplaintById(complaintId);
+      if (!complaint) {
+        await ctx.answerCbQuery(t('ru', 'genericError'), { show_alert: true });
+        return;
+      }
+
+      if (complaint.status !== 'new') {
+        await ctx.answerCbQuery(t('ru', 'complaintLogStatusAlreadySet'));
+        return;
+      }
+
+      const newStatus = action === 'resolve' ? 'resolved' : 'cancelled';
+      try {
+        await repository.updateComplaintStatus(complaintId, newStatus, ctx.from.id);
+      } catch (error) {
+        console.error('Failed to update complaint status', error);
+        await ctx.answerCbQuery(t('ru', 'genericError'), { show_alert: true });
+        return;
+      }
+    }
+  }
+
   const actorLabel = formatUserLabelFromContext(ctx.from);
   const noteKey =
     action === 'resolve' ? 'complaintLogResolvedNote' : 'complaintLogCancelledNote';
@@ -2294,6 +2735,7 @@ bot.action(/^complaintLog:(resolve|cancel):(\d+)$/i, async (ctx) => {
     console.error('Failed to update complaint status', error);
     await ctx.answerCbQuery(t('ru', 'genericError'), { show_alert: true });
   }
+
 });
 
 bot.action(/^language:(ru|en)$/i, async (ctx) => {
@@ -2355,7 +2797,15 @@ bot.on('text', async (ctx, next) => {
     return;
   }
 
-  await ctx.reply(t(language, 'menuReminder'), userKeyboard(language));
+  const coldProfile = user?.id
+    ? await repository.getColdProfileByUserId(user.id)
+    : null;
+  const showColdButton = user?.status === 'active' && !coldProfile;
+
+  await ctx.reply(
+    t(language, 'menuReminder'),
+    userKeyboard(language, { showColdButton })
+  );
   if (typeof next === 'function') {
     await next();
   }
