@@ -4,7 +4,8 @@
       "active": false,
       "until": null,
       "message": null
-    }
+    },
+    "defaultStopWorkMessage": null
   },
   "lines": [
     {
@@ -57,5 +58,7 @@
       "comment": null
     }
   ],
-  "admins": []
+  "admins": [],
+  "coldProfiles": [],
+  "complaints": []
 }
