@@ -22,6 +22,7 @@ const translations = {
   ru: {
     mainMenuPrompt: '✨ Выберите действие в меню ниже.',
     complaintButton: '🆘 Жалоба',
+    settingsButton: '⚙️ Настройки',
     complaintChooseLine: '📞 Выберите линию, на которую хотите пожаловаться:',
     complaintLineChosen: ({ lineTitle, lineId }) =>
       `🔎 Линия ${lineTitle || lineId} выбрана! Опишите проблему одним сообщением 👇`,
@@ -90,6 +91,18 @@ const translations = {
     complainLogMessageLabel: '📝 Сообщение:',
     complaintPrompt: '📞 Выберите линию, чтобы оставить жалобу:',
     backButton: '⬅️ Назад',
+    settingsPrompt: '⚙️ Настройки. Выберите действие ниже:',
+    settingsChangeLanguageOption: '🌐 Сменить язык',
+    settingsInstructionsOption: '📘 Инструкция',
+    settingsInstructions:
+      [
+        'ℹ️ Как оставить жалобу:',
+        '1️⃣ Нажмите «🆘 Жалоба».',
+        '2️⃣ Выберите линию и, если требуется, конкретный номер.',
+        '3️⃣ Опишите проблему одним сообщением — администраторы получат его в рабочем чате.',
+        '',
+        'Также в разделе настроек вы всегда можете сменить язык интерфейса.',
+      ].join('\n'),
     complaintCancelButton: '❌ Отмена',
     complaintCancelled: '✅ Жалоба отменена. Возвращаем вас в главное меню.',
     complaintChooseSip: ({ lineTitle, lineId }) =>
@@ -135,6 +148,7 @@ const translations = {
   en: {
     mainMenuPrompt: '✨ Choose an option from the menu below.',
     complaintButton: '🆘 Complaint',
+    settingsButton: '⚙️ Settings',
     complaintChooseLine: '📞 Choose a line to report:',
     complaintLineChosen: ({ lineTitle, lineId }) =>
       `🔎 Line ${lineTitle || lineId} selected! Describe the issue in one message 👇`,
@@ -201,6 +215,18 @@ const translations = {
     complainLogMessageLabel: '📝 Message:',
     complaintPrompt: '📞 Choose a line for your complaint:',
     backButton: '⬅️ Back',
+    settingsPrompt: '⚙️ Settings. Pick an option below:',
+    settingsChangeLanguageOption: '🌐 Change language',
+    settingsInstructionsOption: '📘 How it works',
+    settingsInstructions:
+      [
+        'ℹ️ How to submit a complaint:',
+        '1️⃣ Tap “🆘 Complaint”.',
+        '2️⃣ Choose the line and, if needed, a specific number.',
+        '3️⃣ Describe the issue in one message — admins will receive it in the log chat.',
+        '',
+        'You can always switch the interface language from the settings menu.',
+      ].join('\n'),
     complaintCancelButton: '❌ Cancel',
     complaintCancelled: '✅ Complaint cancelled. Back to the main menu.',
     complaintChooseSip: ({ lineTitle, lineId }) =>
@@ -404,7 +430,49 @@ function formatDateForLanguage(isoString, language) {
 }
 
 function userKeyboard(language) {
-  return Markup.keyboard([[{ text: t(language, 'complaintButton') }]]).resize();
+  return Markup.keyboard([
+    [{ text: t(language, 'complaintButton') }],
+    [{ text: t(language, 'settingsButton') }],
+  ]).resize();
+}
+
+function userSettingsKeyboard(language) {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback(
+        t(language, 'settingsChangeLanguageOption'),
+        'settings:language'
+      ),
+    ],
+    [
+      Markup.button.callback(
+        t(language, 'settingsInstructionsOption'),
+        'settings:instructions'
+      ),
+    ],
+  ]);
+}
+
+function settingsInstructionsKeyboard(language) {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback(t(language, 'backButton'), 'settings:menu')],
+  ]);
+}
+
+async function sendSettingsMenu(ctx, language, { edit = false } = {}) {
+  const text = t(language, 'settingsPrompt');
+  const keyboard = userSettingsKeyboard(language);
+
+  if (edit) {
+    try {
+      await ctx.editMessageText(text, keyboard);
+      return;
+    } catch (error) {
+      // Message might be not editable; fall back to a regular reply below.
+    }
+  }
+
+  await ctx.reply(text, keyboard);
 }
 
 function languageSelectionKeyboard() {
@@ -533,10 +601,15 @@ async function notifyAdminsAboutApplication(user, application) {
   );
 }
 
-async function promptLanguageSelection(userId) {
+async function promptLanguageSelection(userId, language = 'ru') {
   userStates.set(Number(userId), { type: 'awaitingLanguageChoice' });
+  const code = ensureLanguage(language);
   try {
-    await bot.telegram.sendMessage(userId, t('ru', 'languagePrompt'), languageSelectionKeyboard());
+    await bot.telegram.sendMessage(
+      userId,
+      t(code, 'languagePrompt'),
+      languageSelectionKeyboard()
+    );
   } catch (error) {
     console.error('Failed to send language selection prompt', error);
   }
@@ -1039,6 +1112,148 @@ bot.hears(/жалоба|complaint/i, async (ctx) => {
   }
 
   await sendComplaintLineMenu(ctx, user, language);
+});
+
+bot.hears(/настройки|settings/i, async (ctx) => {
+  if (isAdmin(ctx.from.id)) {
+    return;
+  }
+
+  if (await isStopWork(ctx)) {
+    clearUserState(ctx.from.id);
+    return;
+  }
+
+  const user = await repository.getUser(ctx.from.id);
+
+  if (!user) {
+    await ctx.reply(t('ru', 'userNotFound'));
+    return;
+  }
+
+  const language = getUserLanguage(user);
+
+  if (user.status === 'banned') {
+    await ctx.reply(t(language, 'banned'));
+    return;
+  }
+
+  if (user.status !== 'active') {
+    await ctx.reply(t(language, 'notActive'));
+    return;
+  }
+
+  await sendSettingsMenu(ctx, language);
+});
+
+bot.action('settings:language', async (ctx) => {
+  if (isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const user = await repository.getUser(ctx.from.id);
+
+  if (!user) {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    await ctx.reply(t('ru', 'userNotFound'));
+    return;
+  }
+
+  const language = getUserLanguage(user);
+
+  if (user.status === 'banned') {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    await ctx.reply(t(language, 'banned'));
+    return;
+  }
+
+  if (user.status !== 'active') {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    await ctx.reply(t(language, 'notActive'));
+    return;
+  }
+
+  await ctx.answerCbQuery('🌐');
+
+  try {
+    await ctx.editMessageReplyMarkup();
+  } catch (error) {
+    // Message might be not editable; ignore silently.
+  }
+
+  await promptLanguageSelection(user.id, language);
+});
+
+bot.action('settings:instructions', async (ctx) => {
+  if (isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const user = await repository.getUser(ctx.from.id);
+  const language = getUserLanguage(user);
+
+  if (!user) {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    await ctx.reply(t('ru', 'userNotFound'));
+    return;
+  }
+
+  if (user.status === 'banned') {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    await ctx.reply(t(language, 'banned'));
+    return;
+  }
+
+  if (user.status !== 'active') {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    await ctx.reply(t(language, 'notActive'));
+    return;
+  }
+
+  await ctx.answerCbQuery('ℹ️');
+
+  const text = t(language, 'settingsInstructions');
+  const keyboard = settingsInstructionsKeyboard(language);
+
+  try {
+    await ctx.editMessageText(text, keyboard);
+  } catch (error) {
+    await ctx.reply(text);
+  }
+});
+
+bot.action('settings:menu', async (ctx) => {
+  if (isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const user = await repository.getUser(ctx.from.id);
+
+  if (!user) {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    await ctx.reply(t('ru', 'userNotFound'));
+    return;
+  }
+
+  const language = getUserLanguage(user);
+
+  if (user.status === 'banned') {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    await ctx.reply(t(language, 'banned'));
+    return;
+  }
+
+  if (user.status !== 'active') {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    await ctx.reply(t(language, 'notActive'));
+    return;
+  }
+
+  await ctx.answerCbQuery();
+  await sendSettingsMenu(ctx, language, { edit: true });
 });
 
 bot.action(/^complaint:(.+)$/i, async (ctx) => {
