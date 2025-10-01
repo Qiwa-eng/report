@@ -446,6 +446,28 @@ function userSettingsKeyboard(language) {
   ]);
 }
 
+function settingsInstructionsKeyboard(language) {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback(t(language, 'backButton'), 'settings:menu')],
+  ]);
+}
+
+async function sendSettingsMenu(ctx, language, { edit = false } = {}) {
+  const text = t(language, 'settingsPrompt');
+  const keyboard = userSettingsKeyboard(language);
+
+  if (edit) {
+    try {
+      await ctx.editMessageText(text, keyboard);
+      return;
+    } catch (error) {
+      // Message might be not editable; fall back to a regular reply below.
+    }
+  }
+
+  await ctx.reply(text, keyboard);
+}
+
 function languageSelectionKeyboard() {
   return Markup.inlineKeyboard([
     [
@@ -1076,6 +1098,11 @@ bot.hears(/настройки|settings/i, async (ctx) => {
     return;
   }
 
+  if (await isStopWork(ctx)) {
+    clearUserState(ctx.from.id);
+    return;
+  }
+
   const user = await repository.getUser(ctx.from.id);
 
   if (!user) {
@@ -1090,7 +1117,12 @@ bot.hears(/настройки|settings/i, async (ctx) => {
     return;
   }
 
-  await ctx.reply(t(language, 'settingsPrompt'), userSettingsKeyboard(language));
+  if (user.status !== 'active') {
+    await ctx.reply(t(language, 'notActive'));
+    return;
+  }
+
+  await sendSettingsMenu(ctx, language);
 });
 
 bot.action('settings:language', async (ctx) => {
@@ -1112,6 +1144,12 @@ bot.action('settings:language', async (ctx) => {
   if (user.status === 'banned') {
     await ctx.answerCbQuery('🚫', { show_alert: true });
     await ctx.reply(t(language, 'banned'));
+    return;
+  }
+
+  if (user.status !== 'active') {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    await ctx.reply(t(language, 'notActive'));
     return;
   }
 
@@ -1147,8 +1185,54 @@ bot.action('settings:instructions', async (ctx) => {
     return;
   }
 
+  if (user.status !== 'active') {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    await ctx.reply(t(language, 'notActive'));
+    return;
+  }
+
   await ctx.answerCbQuery('ℹ️');
-  await ctx.reply(t(language, 'settingsInstructions'));
+
+  const text = t(language, 'settingsInstructions');
+  const keyboard = settingsInstructionsKeyboard(language);
+
+  try {
+    await ctx.editMessageText(text, keyboard);
+  } catch (error) {
+    await ctx.reply(text);
+  }
+});
+
+bot.action('settings:menu', async (ctx) => {
+  if (isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const user = await repository.getUser(ctx.from.id);
+
+  if (!user) {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    await ctx.reply(t('ru', 'userNotFound'));
+    return;
+  }
+
+  const language = getUserLanguage(user);
+
+  if (user.status === 'banned') {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    await ctx.reply(t(language, 'banned'));
+    return;
+  }
+
+  if (user.status !== 'active') {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    await ctx.reply(t(language, 'notActive'));
+    return;
+  }
+
+  await ctx.answerCbQuery();
+  await sendSettingsMenu(ctx, language, { edit: true });
 });
 
 bot.action(/^complaint:(.+)$/i, async (ctx) => {
