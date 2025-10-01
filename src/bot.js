@@ -476,7 +476,7 @@ function formatLineButtonLabel(line) {
 function buildSipKeyboard(line, options, language) {
   const rows = chunk(options, 3).map((group) =>
     group.map((sip) =>
-      Markup.button.callback(
+      Markup.callbackButton(
         `☎️ ${sip}`,
         `complaintSip:${encodeCallbackComponent(line.id)}:${encodeCallbackComponent(sip)}`
       )
@@ -484,11 +484,11 @@ function buildSipKeyboard(line, options, language) {
   );
 
   rows.push([
-    Markup.button.callback(
+    Markup.callbackButton(
       t(language, 'backButton'),
       `complaintBack:${encodeCallbackComponent(line.id)}`
     ),
-    Markup.button.callback(t(language, 'complaintCancelButton'), 'complaintCancel'),
+    Markup.callbackButton(t(language, 'complaintCancelButton'), 'complaintCancel'),
   ]);
 
   return Markup.inlineKeyboard(rows);
@@ -504,13 +504,13 @@ async function sendComplaintLineMenu(ctx, user, language, { edit = false } = {})
   }
 
   const keyboardRows = userLines.map((line) => [
-    Markup.button.callback(
+    Markup.callbackButton(
       formatLineButtonLabel(line),
       `complaint:${encodeCallbackComponent(line.id)}`
     ),
   ]);
 
-  keyboardRows.push([Markup.button.callback(t(language, 'complaintCancelButton'), 'complaintCancel')]);
+  keyboardRows.push([Markup.callbackButton(t(language, 'complaintCancelButton'), 'complaintCancel')]);
 
   const keyboard = Markup.inlineKeyboard(keyboardRows);
 
@@ -620,13 +620,13 @@ function userKeyboard(language, { showColdButton = false } = {}) {
 function userSettingsKeyboard(language) {
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback(
+      Markup.callbackButton(
         t(language, 'settingsChangeLanguageOption'),
         'settings:language'
       ),
     ],
     [
-      Markup.button.callback(
+      Markup.callbackButton(
         t(language, 'settingsInstructionsOption'),
         'settings:instructions'
       ),
@@ -636,7 +636,7 @@ function userSettingsKeyboard(language) {
 
 function settingsInstructionsKeyboard(language) {
   return Markup.inlineKeyboard([
-    [Markup.button.callback(t(language, 'backButton'), 'settings:menu')],
+    [Markup.callbackButton(t(language, 'backButton'), 'settings:menu')],
   ]);
 }
 
@@ -653,11 +653,11 @@ function buildComplaintLogKeyboard(complaintId, fallbackUserId) {
 
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback(
+      Markup.callbackButton(
         t('ru', 'complaintLogResolveButton'),
         `complaintLog:resolve:${identifier}`
       ),
-      Markup.button.callback(
+      Markup.callbackButton(
         t('ru', 'complaintLogCancelButton'),
         `complaintLog:cancel:${identifier}`
       ),
@@ -684,31 +684,31 @@ async function sendSettingsMenu(ctx, language, { edit = false } = {}) {
 function languageSelectionKeyboard() {
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback('🇷🇺 Русский', 'language:ru'),
-      Markup.button.callback('🇬🇧 English', 'language:en'),
+      Markup.callbackButton('🇷🇺 Русский', 'language:ru'),
+      Markup.callbackButton('🇬🇧 English', 'language:en'),
     ],
   ]);
 }
 
 function adminMenuKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('📥 Заявки', 'admin:applications:list')],
-    [Markup.button.callback('🧭 Линии', 'admin:lines:menu')],
-    [Markup.button.callback('👥 Пользователи', 'admin:users:menu')],
-    [Markup.button.callback('📊 Статистика', 'admin:stats')],
-    [Markup.button.callback('⛔️ Стоп ворк', 'admin:stopwork:menu')],
-    [Markup.button.callback('⚙️ Настройки', 'admin:settings')],
+    [Markup.callbackButton('📥 Заявки', 'admin:applications:list')],
+    [Markup.callbackButton('🧭 Линии', 'admin:lines:menu')],
+    [Markup.callbackButton('👥 Пользователи', 'admin:users:menu')],
+    [Markup.callbackButton('📊 Статистика', 'admin:stats')],
+    [Markup.callbackButton('⛔️ Стоп ворк', 'admin:stopwork:menu')],
+    [Markup.callbackButton('⚙️ Настройки', 'admin:settings')],
   ]);
 }
 
 function adminLinesKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('➕ Создать линию', 'admin:lines:create')],
-    [Markup.button.callback('📜 Список линий', 'admin:lines:list')],
-    [Markup.button.callback('🔗 Привязать пользователя', 'admin:lines:attachUser')],
-    [Markup.button.callback('✂️ Отвязать пользователя', 'admin:lines:detachUser')],
-    [Markup.button.callback('📡 Назначить группу логов', 'admin:lines:setGroup')],
-    [Markup.button.callback('⬅️ Назад', 'admin:back')],
+    [Markup.callbackButton('➕ Создать линию', 'admin:lines:create')],
+    [Markup.callbackButton('📜 Список линий', 'admin:lines:list')],
+    [Markup.callbackButton('🔗 Привязать пользователя', 'admin:lines:attachUser')],
+    [Markup.callbackButton('✂️ Отвязать пользователя', 'admin:lines:detachUser')],
+    [Markup.callbackButton('📡 Назначить группу логов', 'admin:lines:setGroup')],
+    [Markup.callbackButton('⬅️ Назад', 'admin:back')],
   ]);
 }
 
@@ -716,39 +716,39 @@ function adminSettingsKeyboard(language) {
   const code = ensureLanguage(language);
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback(
+      Markup.callbackButton(
         t(code, 'adminSettingsStopWorkMessageButton'),
         'admin:settings:stopworkMessage'
       ),
     ],
     [
-      Markup.button.callback(
+      Markup.callbackButton(
         t(code, 'adminSettingsShowConfigButton'),
         'admin:settings:show'
       ),
     ],
-    [Markup.button.callback(t(code, 'backButton'), 'admin:back')],
+    [Markup.callbackButton(t(code, 'backButton'), 'admin:back')],
   ]);
 }
 
 function adminUsersKeyboard() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('📋 Список пользователей', 'admin:users:list')],
-    [Markup.button.callback('⛔️ Бан', 'admin:users:ban')],
-    [Markup.button.callback('🔇 Мут', 'admin:users:mute')],
-    [Markup.button.callback('🔊 Снять мут', 'admin:users:unmute')],
-    [Markup.button.callback('⬅️ Назад', 'admin:back')],
+    [Markup.callbackButton('📋 Список пользователей', 'admin:users:list')],
+    [Markup.callbackButton('⛔️ Бан', 'admin:users:ban')],
+    [Markup.callbackButton('🔇 Мут', 'admin:users:mute')],
+    [Markup.callbackButton('🔊 Снять мут', 'admin:users:unmute')],
+    [Markup.callbackButton('⬅️ Назад', 'admin:back')],
   ]);
 }
 
 function adminStopWorkKeyboard(active) {
   const buttons = [];
   if (active) {
-    buttons.push([Markup.button.callback('✅ Отключить', 'admin:stopwork:disable')]);
+    buttons.push([Markup.callbackButton('✅ Отключить', 'admin:stopwork:disable')]);
   } else {
-    buttons.push([Markup.button.callback('🚧 Включить', 'admin:stopwork:enable')]);
+    buttons.push([Markup.callbackButton('🚧 Включить', 'admin:stopwork:enable')]);
   }
-  buttons.push([Markup.button.callback('⬅️ Назад', 'admin:back')]);
+  buttons.push([Markup.callbackButton('⬅️ Назад', 'admin:back')]);
   return Markup.inlineKeyboard(buttons);
 }
 
@@ -905,8 +905,8 @@ async function notifyAdminsAboutApplication(user, application) {
 
   const keyboard = Markup.inlineKeyboard([
     [
-      Markup.button.callback('❌ Отклонить', `application:decline:${application.id}`),
-      Markup.button.callback('✅ Подтвердить', `application:confirm:${application.id}`),
+      Markup.callbackButton('❌ Отклонить', `application:decline:${application.id}`),
+      Markup.callbackButton('✅ Подтвердить', `application:confirm:${application.id}`),
     ],
   ]);
 
@@ -927,7 +927,7 @@ function buildAdminUsersList(users, page = 0) {
   const items = users.slice(start, end);
 
   const buttons = items.map((user) => [
-    Markup.button.callback(
+    Markup.callbackButton(
       `${formatUserButtonLabel(user)} • ${user.id}`,
       `admin:users:view:${user.id}:${safePage}`
     ),
@@ -937,12 +937,12 @@ function buildAdminUsersList(users, page = 0) {
     const navRow = [];
     if (safePage > 0) {
       navRow.push(
-        Markup.button.callback('⬅️ Предыдущие', `admin:users:page:${safePage - 1}`)
+        Markup.callbackButton('⬅️ Предыдущие', `admin:users:page:${safePage - 1}`)
       );
     }
     if (safePage < totalPages - 1) {
       navRow.push(
-        Markup.button.callback('Следующие ➡️', `admin:users:page:${safePage + 1}`)
+        Markup.callbackButton('Следующие ➡️', `admin:users:page:${safePage + 1}`)
       );
     }
     if (navRow.length) {
@@ -950,7 +950,7 @@ function buildAdminUsersList(users, page = 0) {
     }
   }
 
-  buttons.push([Markup.button.callback('⬅️ Назад', 'admin:users:menu')]);
+  buttons.push([Markup.callbackButton('⬅️ Назад', 'admin:users:menu')]);
 
   const total = users.length;
   const active = users.filter((item) => item.status === 'active').length;
@@ -989,35 +989,35 @@ function buildAdminUserDetailsKeyboard(user, page, isMuted, options = {}) {
 
   const rows = [
     [
-      Markup.button.callback(
+      Markup.callbackButton(
         statusActiveLabel,
         `admin:users:status:active:${user.id}:${page}`
       ),
-      Markup.button.callback(
+      Markup.callbackButton(
         statusBannedLabel,
         `admin:users:status:banned:${user.id}:${page}`
       ),
     ],
     [
-      Markup.button.callback('🔇 Мут 1ч', `admin:users:mute:1:${user.id}:${page}`),
-      Markup.button.callback('🔇 Мут 4ч', `admin:users:mute:4:${user.id}:${page}`),
+      Markup.callbackButton('🔇 Мут 1ч', `admin:users:mute:1:${user.id}:${page}`),
+      Markup.callbackButton('🔇 Мут 4ч', `admin:users:mute:4:${user.id}:${page}`),
     ],
     [
-      Markup.button.callback('🔇 Мут 24ч', `admin:users:mute:24:${user.id}:${page}`),
-      Markup.button.callback(unmuteLabel, `admin:users:unmute:${user.id}:${page}`),
+      Markup.callbackButton('🔇 Мут 24ч', `admin:users:mute:24:${user.id}:${page}`),
+      Markup.callbackButton(unmuteLabel, `admin:users:unmute:${user.id}:${page}`),
     ],
   ];
 
   if (showColdSetupButton) {
     rows.push([
-      Markup.button.callback(
+      Markup.callbackButton(
         '❄️ Настроить холодку',
         `admin:users:cold:menu:${user.id}:${page}`
       ),
     ]);
   }
 
-  rows.push([Markup.button.callback('⬅️ К списку', `admin:users:page:${page}`)]);
+  rows.push([Markup.callbackButton('⬅️ К списку', `admin:users:page:${page}`)]);
 
   return Markup.inlineKeyboard(rows);
 }
@@ -2209,7 +2209,7 @@ bot.action('admin:applications:list', async (ctx) => {
 
   const keyboard = Markup.inlineKeyboard(
     applicationsWithUsers.map(({ application, user }) => [
-      Markup.button.callback(
+      Markup.callbackButton(
         formatApplicationButtonLabel(application, user),
         `admin:applications:open:${application.id}`
       ),
@@ -2238,10 +2238,10 @@ bot.action(/^admin:applications:open:(.+)$/, async (ctx) => {
 
   const keyboard = Markup.inlineKeyboard([
     [
-      Markup.button.callback('✅ Подтвердить', `application:confirm:${application.id}`),
-      Markup.button.callback('❌ Отклонить', `application:decline:${application.id}`),
+      Markup.callbackButton('✅ Подтвердить', `application:confirm:${application.id}`),
+      Markup.callbackButton('❌ Отклонить', `application:decline:${application.id}`),
     ],
-    [Markup.button.callback('⬅️ Назад', 'admin:applications:list')],
+    [Markup.callbackButton('⬅️ Назад', 'admin:applications:list')],
   ]);
 
   await ctx.answerCbQuery();
@@ -2400,14 +2400,14 @@ bot.action(/^admin:users:cold:menu:(\d+):(\d+)$/i, async (ctx) => {
   }
 
   const buttons = userLines.map((line) => [
-    Markup.button.callback(
+    Markup.callbackButton(
       formatLineButtonLabel(line),
       `admin:users:cold:line:${userId}:${encodeCallbackComponent(line.id)}:${page}`
     ),
   ]);
 
   buttons.push([
-    Markup.button.callback('⬅️ Назад', `admin:users:view:${userId}:${page}`),
+    Markup.callbackButton('⬅️ Назад', `admin:users:view:${userId}:${page}`),
   ]);
 
   await ctx.answerCbQuery();
