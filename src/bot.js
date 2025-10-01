@@ -1,0 +1,1362 @@
+﻿const { Telegraf, Markup } = require('telegraf');
+const { getConfig } = require('./config');
+const repository = require('./repository');
+
+const config = getConfig();
+const bot = new Telegraf(config.botToken);
+
+const userStates = new Map();
+const adminStates = new Map();
+
+const LANGUAGE_NAMES = {
+  ru: 'Русский',
+  en: 'English',
+};
+
+const LOCALE_BY_LANGUAGE = {
+  ru: 'ru-RU',
+  en: 'en-US',
+};
+
+const translations = {
+  ru: {
+    mainMenuPrompt: '✨ Выберите действие в меню ниже.',
+    complaintButton: '🆘 Жалоба',
+    complaintChooseLine: '📞 Выберите линию, на которую хотите пожаловаться:',
+    complaintLineChosen: ({ lineTitle, lineId }) =>
+      `🔎 Линия ${lineTitle || lineId} выбрана! Опишите проблему одним сообщением 👇`,
+    complaintSent: '✅ Жалоба отправлена! Спасибо за обратную связь 🙏',
+    complaintError: '⚠️ Не удалось отправить жалобу. Сообщите администратору.',
+    notActive: '⏳ Ваша заявка ещё на рассмотрении. Ждите решения, пожалуйста.',
+    notLinked: '🔗 Вы пока не привязаны ни к одной линии. Напишите администратору.',
+    banned: '⛔️ Доступ заблокирован. Обратитесь к администратору.',
+    pendingApplied: '📝 Ваша заявка отправлена на модерацию. Ожидайте ответа 💬',
+    alreadyPending: '📝 Ваша заявка уже в обработке. Ожидайте, пожалуйста.',
+    languagePrompt: '🌐 Выберите язык интерфейса / Choose your interface language:',
+    languageReminder:
+      '🌐 Пожалуйста, выберите язык с помощью кнопок ниже.\n🌍 Please choose a language using the buttons below.',
+    languageConfirmed: ({ languageName }) => `✅ Язык интерфейса: ${languageName}!`,
+    stopWork: ({ until, message }) =>
+      `🚧 ${message}${until ? `\n🗓 Доступ откроется после: ${until}` : ''}`,
+    adminPanel: '📋 Панель администратора.',
+    adminUseMenu: '🛠 Используйте /admin для панели.',
+    noAccessLine: '🚫 Нет доступа к указанной линии.',
+    lineNotConfigured: '⚠️ Для этой линии не настроена группа логов. Жалоба не отправлена.',
+    lineMissing: '❗️ Линия не найдена. Свяжитесь с администратором.',
+    muteActive: ({ until }) => `🔇 Вы временно не можете отправлять сообщения. Мут до: ${until}`,
+    muteActiveComplaints: ({ until }) =>
+      `🔇 Вы временно не можете отправлять жалобы. Мут до: ${until}`,
+    applicationDeclinedUser:
+      '❌ Ваша заявка отклонена. Свяжитесь с администратором для уточнения.',
+    applicationApprovedUser: ({ lineTitle, lineId }) =>
+      `🎉 Ваша заявка одобрена! Вы привязаны к линии ${lineTitle || lineId}.`,
+    applicationApprovedAdmin: ({ lineTitle, lineId }) =>
+      `✅ Пользователь привязан к линии ${lineTitle || lineId}.`,
+    languageSelectionSent: '🌐 Отправлена просьба выбрать язык.',
+    selectLineManualHint: '🔢 Введите ID линии для пользователя.',
+    linesListEmpty: '📭 Линии ещё не созданы.',
+    usersListEmpty: '📭 Пользователей пока нет.',
+    stopWorkActivated: '🚧 Стоп-ворк активирован.',
+    stopWorkDisabled: '✅ Стоп-ворк отключён.',
+    muteRemoved: ({ userId }) => `🔊 Мут для пользователя ${userId} снят.`,
+    muted: ({ userId, hours }) => `🔇 Пользователь ${userId} замьючен на ${hours} ч.`,
+    bannedUser: ({ userId }) => `⛔️ Пользователь ${userId} забанен.`,
+    attachedUser: ({ userLabel, lineTitle, lineId }) =>
+      `🔗 ${userLabel} привязан к линии ${lineTitle || lineId}.`,
+    detachedUser: ({ userId, lineId }) => `✂️ Пользователь ${userId} отвязан от линии ${lineId}.`,
+    lineGroupSet: ({ lineTitle, groupId }) =>
+      `📡 Для линии ${lineTitle} установлен чат ${groupId}.`,
+    lineCreated: ({ lineTitle, lineId }) => `🆕 Линия ${lineTitle || lineId} создана.`,
+        complainLogTitle: ({ userLabel, lineTitle, lineId }) =>
+      `🚨 Жалоба от ${userLabel}\n📞 Линия: ${lineTitle || lineId}`,
+    complainLogSip: ({ sip }) => `📟 SIP: ${sip}`,
+    complainLogMessageLabel: '📝 Сообщение:',
+    complaintPrompt: '📞 Выберите линию, чтобы оставить жалобу:',
+    backButton: '⬅️ Назад',
+    complaintChooseSip: ({ lineTitle, lineId }) =>
+      `📟 Выберите конкретный номер из диапазона ${lineTitle || lineId}`,
+    complaintSipReminder:
+      '📟 Пожалуйста, выберите конкретный номер с помощью кнопок ниже.',
+    complaintSipChosen: ({ sip, lineTitle, lineId }) =>
+    complaintSipInvalid: '⚠️ Выберите номер из списка.',
+      `🎉 Номер ${sip} выбран для линии ${lineTitle || lineId}! Опишите проблему одним сообщением 👇`,
+    pendingApplicationsList: ({ items }) => `📥 Ожидающие заявки\n${items.join('\n')}`,
+,
+    pendingApplicationsEmpty: '✨ Нет активных заявок.',
+    userListFooter: ({ count }) => `\n... и ещё ${count}`,
+    stats: ({ totalUsers, activeUsers, bannedUsers, totalLines, pending }) =>
+      [
+        `👥 Всего пользователей: ${totalUsers}`,
+        `🟢 Активных: ${activeUsers}`,
+        `⛔️ Забаненных: ${bannedUsers}`,
+        `📞 Всего линий: ${totalLines}`,
+        `⏳ Ожидающих заявок: ${pending}`,
+      ].join('\n'),
+    stopWorkStatus: ({ active, until, message }) =>
+      `🚧 Стоп-ворк: ${active ? 'активен' : 'выключен'}${until ? `\n🗓 До: ${until}` : ''}${
+        message ? `\n💬 Сообщение: ${message}` : ''
+      }`,
+    waitingForLineIdFormat: 'ℹ️ Укажите ID линии. Пример: 101;Support',
+    attachUserFormat: 'ℹ️ Формат: userId;lineId',
+    setGroupFormat: 'ℹ️ Формат: lineId;chatId. Можно переслать сообщение из группы.',
+    banPrompt: '🔢 Отправьте userId для бана.',
+    mutePrompt: '🔢 Отправьте userId и часы мута через точку с запятой (пример: 12345;2).',
+    unmutePrompt: '🔢 Отправьте userId;0 чтобы снять мут.',
+    stopWorkPrompt:
+      '🕒 Отправьте дату и текст: YYYY-MM-DD HH:MM;Сообщение (дата опциональна).',
+    adminAwaitLineId: ({ userLabel }) => `🔢 Введите ID линии для пользователя ${userLabel}.`,
+    applicationDeclinedAdmin: ({ userLabel }) => `❌ Заявка отклонена: ${userLabel}`,
+    applicationDeclinedCb: '❌ Заявка отклонена',
+    applicationConfirmCb: '✍️ Введите ID линии в чате',
+    applicationDeclineAlert: '❌ Заявка отклонена',
+    applicationNotFound: 'Заявка не найдена',
+    userNotFound: 'Пользователь не найден. Нажмите /start.',
+    genericError: '⚠️ Произошла ошибка. Попробуйте позже.',
+    menuReminder: '🔁 Используйте кнопки меню.',
+  },
+  en: {
+    mainMenuPrompt: '✨ Choose an option from the menu below.',
+    complaintButton: '🆘 Complaint',
+    complaintChooseLine: '📞 Choose a line to report:',
+    complaintLineChosen: ({ lineTitle, lineId }) =>
+      `🔎 Line ${lineTitle || lineId} selected! Describe the issue in one message 👇`,
+    complaintSent: '✅ Complaint sent! Thank you for the feedback 🙏',
+    complaintError: '⚠️ Failed to send the complaint. Please notify an admin.',
+    notActive: '⏳ Your application is still under review. Please wait.',
+    notLinked: '🔗 You are not linked to any line yet. Contact an admin.',
+    banned: '⛔️ Access denied. Contact an administrator.',
+    pendingApplied: '📝 Your application was submitted for moderation. Please wait 💬',
+    alreadyPending: '📝 Your application is already being processed. Please wait.',
+    languagePrompt: '🌐 Choose your interface language:',
+    languageReminder: '🌐 Please pick a language using the buttons below.',
+    languageConfirmed: ({ languageName }) => `✅ Interface language set to ${languageName}!`,
+    stopWork: ({ until, message }) =>
+      `🚧 ${message}${until ? `\n🗓 Access will open after: ${until}` : ''}`,
+    adminPanel: '📋 Admin panel.',
+    adminUseMenu: '🛠 Use /admin to open the panel.',
+    noAccessLine: '🚫 You have no access to that line.',
+    lineNotConfigured: '⚠️ This line has no log group configured. Complaint not sent.',
+    lineMissing: '❗️ Line not found. Contact an administrator.',
+    muteActive: ({ until }) => `🔇 You are muted until: ${until}`,
+    muteActiveComplaints: ({ until }) =>
+      `🔇 You cannot submit complaints while muted. Until: ${until}`,
+    applicationDeclinedUser:
+      '❌ Your application was declined. Contact an administrator for details.',
+    applicationApprovedUser: ({ lineTitle, lineId }) =>
+      `🎉 Your application is approved! You are linked to the line ${lineTitle || lineId}.`,
+    applicationApprovedAdmin: ({ lineTitle, lineId }) =>
+      `✅ User linked to ${lineTitle || lineId}.`,
+    languageSelectionSent: '🌐 Language selection prompt sent.',
+    selectLineManualHint: '🔢 Enter the line ID for the user.',
+    linesListEmpty: '📭 No lines created yet.',
+    usersListEmpty: '📭 No users yet.',
+    stopWorkActivated: '🚧 Stop-work mode activated.',
+    stopWorkDisabled: '✅ Stop-work disabled.',
+    muteRemoved: ({ userId }) => `🔊 Mute removed for user ${userId}.`,
+    muted: ({ userId, hours }) => `🔇 User ${userId} muted for ${hours}h.`,
+    bannedUser: ({ userId }) => `⛔️ User ${userId} banned.`,
+    attachedUser: ({ userLabel, lineTitle, lineId }) =>
+      `🔗 ${userLabel} linked to ${lineTitle || lineId}.`,
+    detachedUser: ({ userId, lineId }) => `✂️ User ${userId} unlinked from ${lineId}.`,
+    lineGroupSet: ({ lineTitle, groupId }) =>
+      `📡 Chat ${groupId} assigned to line ${lineTitle}.`,
+    lineCreated: ({ lineTitle, lineId }) => `🆕 Line ${lineTitle || lineId} created.`,
+    complainLogTitle: ({ userLabel, lineTitle, lineId }) =>
+      `🚨 Complaint from ${userLabel}\n📞 Line: ${lineTitle || lineId}`,
+    complainLogSip: ({ sip }) => `📟 SIP: ${sip}`,
+    complainLogMessageLabel: '📝 Message:',
+    complaintPrompt: '📞 Choose a line for your complaint:',
+    backButton: '⬅️ Back',
+    complaintChooseSip: ({ lineTitle, lineId }) =>
+      `📟 Pick a specific number from ${lineTitle || lineId}`,
+    complaintSipReminder: '📟 Please pick a specific number using the buttons below.',
+    complaintSipChosen: ({ sip, lineTitle, lineId }) =>
+    complaintSipInvalid: '⚠️ Please choose a number from the list.',
+      `🎉 Number ${sip} selected for ${lineTitle || lineId}! Describe the issue in one message 👇`,
+    pendingApplicationsList: ({ items }) => `📥 Pending applications\n${items.join('\n')}`,
+,
+    pendingApplicationsEmpty: '✨ No pending applications.',
+    userListFooter: ({ count }) => `\n... plus ${count} more`,
+    stats: ({ totalUsers, activeUsers, bannedUsers, totalLines, pending }) =>
+      [
+        `👥 Total users: ${totalUsers}`,
+        `🟢 Active: ${activeUsers}`,
+        `⛔️ Banned: ${bannedUsers}`,
+        `📞 Lines: ${totalLines}`,
+        `⏳ Pending apps: ${pending}`,
+      ].join('\n'),
+    stopWorkStatus: ({ active, until, message }) =>
+      `🚧 Stop-work: ${active ? 'enabled' : 'disabled'}${until ? `\n🗓 Until: ${until}` : ''}${
+        message ? `\n💬 Message: ${message}` : ''
+      }`,
+    waitingForLineIdFormat: 'ℹ️ Provide the line ID. Example: 101;Support',
+    attachUserFormat: 'ℹ️ Format: userId;lineId',
+    setGroupFormat: 'ℹ️ Format: lineId;chatId. You can forward a message from the target group.',
+    banPrompt: '🔢 Send the userId to ban.',
+    mutePrompt: '🔢 Send userId;hours to mute (e.g. 12345;2).',
+    unmutePrompt: '🔢 Send userId;0 to remove mute.',
+    stopWorkPrompt: '🕒 Send: YYYY-MM-DD HH:MM;Message (date optional).',
+    adminAwaitLineId: ({ userLabel }) => `🔢 Enter the line ID for ${userLabel}.`,
+    applicationDeclinedAdmin: ({ userLabel }) => `❌ Application declined: ${userLabel}`,
+    applicationDeclinedCb: '❌ Application declined',
+    applicationConfirmCb: '✍️ Enter the line ID in chat',
+    applicationDeclineAlert: '❌ Application declined',
+    applicationNotFound: 'Application not found',
+    userNotFound: 'User not found. Use /start.',
+    genericError: '⚠️ An error occurred. Try again later.',
+    menuReminder: '🔁 Use the menu buttons.',
+  },
+};
+
+const LANGUAGE_CODES = Object.keys(LANGUAGE_NAMES);
+
+function ensureLanguage(code) {
+  return LANGUAGE_CODES.includes(code) ? code : 'ru';
+}
+
+function getUserLanguage(user) {
+  return ensureLanguage(user?.language);
+}
+
+function t(language, key, params = {}) {
+  const code = ensureLanguage(language);
+  const value = translations[code][key] ?? translations.ru[key];
+  if (typeof value === 'function') {
+    return value(params);
+  }
+  return value;
+}
+
+function formatDateForLanguage(isoString, language) {
+  if (!isoString) {
+    return null;
+  }
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date.toLocaleString(LOCALE_BY_LANGUAGE[language] || LOCALE_BY_LANGUAGE.ru);
+}
+
+function userKeyboard(language) {
+  return Markup.keyboard([[{ text: t(language, 'complaintButton') }]]).resize();
+}
+
+function languageSelectionKeyboard() {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback('🇷🇺 Русский', 'language:ru'),
+      Markup.button.callback('🇬🇧 English', 'language:en'),
+    ],
+  ]);
+}
+
+function adminMenuKeyboard() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback('📥 Заявки', 'admin:applications:list')],
+    [Markup.button.callback('🧭 Линии', 'admin:lines:menu')],
+    [Markup.button.callback('👥 Пользователи', 'admin:users:menu')],
+    [Markup.button.callback('📊 Статистика', 'admin:stats')],
+    [Markup.button.callback('⛔️ Стоп ворк', 'admin:stopwork:menu')],
+    [Markup.button.callback('⚙️ Настройки', 'admin:settings')],
+  ]);
+}
+
+function adminLinesKeyboard() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback('➕ Создать линию', 'admin:lines:create')],
+    [Markup.button.callback('📜 Список линий', 'admin:lines:list')],
+    [Markup.button.callback('🔗 Привязать пользователя', 'admin:lines:attachUser')],
+    [Markup.button.callback('✂️ Отвязать пользователя', 'admin:lines:detachUser')],
+    [Markup.button.callback('📡 Назначить группу логов', 'admin:lines:setGroup')],
+    [Markup.button.callback('⬅️ Назад', 'admin:back')],
+  ]);
+}
+
+function adminUsersKeyboard() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback('📋 Список пользователей', 'admin:users:list')],
+    [Markup.button.callback('⛔️ Бан', 'admin:users:ban')],
+    [Markup.button.callback('🔇 Мут', 'admin:users:mute')],
+    [Markup.button.callback('🔊 Снять мут', 'admin:users:unmute')],
+    [Markup.button.callback('⬅️ Назад', 'admin:back')],
+  ]);
+}
+
+function adminStopWorkKeyboard(active) {
+  const buttons = [];
+  if (active) {
+    buttons.push([Markup.button.callback('✅ Отключить', 'admin:stopwork:disable')]);
+  } else {
+    buttons.push([Markup.button.callback('🚧 Включить', 'admin:stopwork:enable')]);
+  }
+  buttons.push([Markup.button.callback('⬅️ Назад', 'admin:back')]);
+  return Markup.inlineKeyboard(buttons);
+}
+
+function isAdmin(userId) {
+  return config.admins.includes(Number(userId));
+}
+
+function formatUserLabel(user) {
+  const parts = [];
+  if (user.username) {
+    parts.push(`@${user.username}`);
+  }
+  if (user.firstName) {
+    parts.push(user.firstName);
+  }
+  if (user.lastName) {
+    parts.push(user.lastName);
+  }
+  parts.push(`ID: ${user.id}`);
+  return parts.join(' | ');
+}
+
+function setAdminState(adminId, state) {
+  if (state) {
+    adminStates.set(Number(adminId), state);
+  } else {
+    adminStates.delete(Number(adminId));
+  }
+}
+
+function clearUserState(userId) {
+  userStates.delete(Number(userId));
+}
+
+async function notifyAdminsAboutApplication(user, application) {
+  const text = [
+    '🚨 Новая заявка!',
+    `🙋‍♂️ Пользователь: ${formatUserLabel(user)}`,
+    `🆔 ID заявки: ${application.id}`,
+    '⚙️ Выберите действие:',
+  ].join('\n');
+
+  const keyboard = Markup.inlineKeyboard([
+    [
+      Markup.button.callback('❌ Отклонить', `application:decline:${application.id}`),
+      Markup.button.callback('✅ Подтвердить', `application:confirm:${application.id}`),
+    ],
+  ]);
+
+  await Promise.all(
+    config.admins.map((adminId) =>
+      bot.telegram
+        .sendMessage(adminId, text, keyboard)
+        .catch(() => undefined)
+    )
+  );
+}
+
+async function promptLanguageSelection(userId) {
+  userStates.set(Number(userId), { type: 'awaitingLanguageChoice' });
+  try {
+    await bot.telegram.sendMessage(userId, t('ru', 'languagePrompt'), languageSelectionKeyboard());
+  } catch (error) {
+    console.error('Failed to send language selection prompt', error);
+  }
+}
+
+async function isStopWork(ctx) {
+  const settings = await repository.getSettings();
+  const active = settings?.stopWork?.active;
+
+  if (!active || isAdmin(ctx.from.id)) {
+    return false;
+  }
+
+  const user = await repository.getUser(ctx.from.id);
+  const language = getUserLanguage(user);
+  const message = settings.stopWork.message || config.defaultStopWorkMessage;
+  const untilText = formatDateForLanguage(settings.stopWork.until, language);
+
+  await ctx.reply(t(language, 'stopWork', { until: untilText, message }));
+  return true;
+}
+
+function parseDateTime(input) {
+  if (!input) return null;
+  const cleaned = input.trim().replace(' ', 'T');
+  const date = new Date(cleaned);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date;
+}
+
+async function ensureMuteState(user) {
+  if (!user?.mutedUntil) {
+    return { muted: false, until: null };
+  }
+
+  const untilDate = new Date(user.mutedUntil);
+  if (Number.isNaN(untilDate.getTime()) || untilDate.getTime() <= Date.now()) {
+    await repository.setUserMute(user.id, null);
+    return { muted: false, until: null };
+  }
+
+  return { muted: true, until: user.mutedUntil };
+}
+
+async function sendMainMenu(ctx, user) {
+  const targetUser = user || (await repository.getUser(ctx.from.id));
+  const language = getUserLanguage(targetUser);
+  await ctx.reply(t(language, 'mainMenuPrompt'), userKeyboard(language));
+}
+async function processAdminState(ctx) {
+  const state = adminStates.get(Number(ctx.from.id));
+  if (!state) {
+    return false;
+  }
+
+  const text = ctx.message?.text?.trim();
+  if (!text) {
+    return true;
+  }
+
+  try {
+    switch (state.type) {
+      case 'awaitingLineAssignment': {
+        const lineId = text;
+        const line = await repository.getLine(lineId);
+        if (!line) {
+          await ctx.reply(t('ru', 'lineMissing'));
+          return true;
+        }
+
+        const { applicationId, userId } = state.payload;
+        const { user, line: updatedLine } = await repository.attachUserToLine(userId, lineId);
+        await repository.setUserStatus(userId, 'active');
+        await repository.updateApplication(applicationId, { status: 'approved', lineId });
+
+        const language = getUserLanguage(user);
+        try {
+          await bot.telegram.sendMessage(
+            userId,
+            t(language, 'applicationApprovedUser', {
+              lineTitle: updatedLine.title,
+              lineId: updatedLine.id,
+            })
+          );
+        } catch (error) {
+          console.error('Failed to notify user about approval', error);
+        }
+
+        await promptLanguageSelection(userId);
+
+        await ctx.reply(
+          t('ru', 'applicationApprovedAdmin', {
+            lineTitle: updatedLine.title,
+            lineId: updatedLine.id,
+          })
+        );
+        setAdminState(ctx.from.id, null);
+        break;
+      }
+      case 'awaitingLineCreation': {
+        const [rawId, ...rest] = text.split(';');
+        const lineId = (rawId || '').trim();
+        const title = rest.join(';').trim();
+
+        if (!lineId) {
+          await ctx.reply(t('ru', 'waitingForLineIdFormat'));
+          return true;
+        }
+
+        const line = await repository.createLine({ id: lineId, title: title || undefined });
+        await ctx.reply(
+          t('ru', 'lineCreated', { lineTitle: line.title, lineId: line.id })
+        );
+        setAdminState(ctx.from.id, null);
+        break;
+      }
+      case 'awaitingUserLineAttach': {
+        const [rawUserId, rawLineId] = text.split(';');
+        const userId = Number((rawUserId || '').trim());
+        const lineId = (rawLineId || '').trim();
+
+        if (!userId || !lineId) {
+          await ctx.reply(t('ru', 'attachUserFormat'));
+          return true;
+        }
+
+        const { user, line } = await repository.attachUserToLine(userId, lineId);
+        await repository.setUserStatus(userId, 'active');
+
+        const language = getUserLanguage(user);
+        try {
+          await bot.telegram.sendMessage(
+            userId,
+            t(language, 'applicationApprovedUser', {
+              lineTitle: line.title,
+              lineId: line.id,
+            })
+          );
+          if (!user.language) {
+            await promptLanguageSelection(userId);
+          }
+        } catch (error) {
+          console.error('Failed to notify user about attach', error);
+        }
+
+        await ctx.reply(
+          t('ru', 'attachedUser', {
+            userLabel: formatUserLabel(user),
+            lineTitle: line.title,
+            lineId: line.id,
+          })
+        );
+        setAdminState(ctx.from.id, null);
+        break;
+      }
+      case 'awaitingUserLineDetach': {
+        const [rawUserId, rawLineId] = text.split(';');
+        const userId = Number((rawUserId || '').trim());
+        const lineId = (rawLineId || '').trim();
+
+        if (!userId || !lineId) {
+          await ctx.reply(t('ru', 'attachUserFormat'));
+          return true;
+        }
+
+        await repository.detachUserFromLine(userId, lineId);
+        await ctx.reply(t('ru', 'detachedUser', { userId, lineId }));
+        setAdminState(ctx.from.id, null);
+        break;
+      }
+      case 'awaitingLineGroup': {
+        let lineId = text;
+        let groupId = null;
+
+        if (text.includes(';')) {
+          const [linePart, groupPart] = text.split(';', 2);
+          lineId = linePart.trim();
+          groupId = groupPart.trim();
+        }
+
+        if (!groupId && ctx.message.forward_from_chat) {
+          groupId = ctx.message.forward_from_chat.id;
+        }
+
+        if (!lineId || !groupId) {
+          await ctx.reply(t('ru', 'setGroupFormat'));
+          return true;
+        }
+
+        const line = await repository.setLineGroup(lineId, groupId);
+        await ctx.reply(
+          t('ru', 'lineGroupSet', { lineTitle: line.title, groupId })
+        );
+        setAdminState(ctx.from.id, null);
+        break;
+      }
+      case 'awaitingBanUser': {
+        const userId = Number(text);
+        if (!userId) {
+          await ctx.reply(t('ru', 'banPrompt'));
+          return true;
+        }
+        await repository.setUserStatus(userId, 'banned');
+        await ctx.reply(t('ru', 'bannedUser', { userId }));
+        setAdminState(ctx.from.id, null);
+        break;
+      }
+      case 'awaitingMuteUser': {
+        const [rawUserId, rawHours] = text.split(';');
+        const userId = Number((rawUserId || '').trim());
+        const hours = Number((rawHours || '').trim());
+
+        if (!userId) {
+          await ctx.reply(t('ru', 'mutePrompt'));
+          return true;
+        }
+
+        if (!Number.isFinite(hours) || hours < 0) {
+          await ctx.reply(t('ru', 'mutePrompt'));
+          return true;
+        }
+
+        if (!hours) {
+          await repository.setUserMute(userId, null);
+          await ctx.reply(t('ru', 'muteRemoved', { userId }));
+          setAdminState(ctx.from.id, null);
+          break;
+        }
+
+        const until = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+        await repository.setUserMute(userId, until);
+        await ctx.reply(t('ru', 'muted', { userId, hours }));
+        setAdminState(ctx.from.id, null);
+        break;
+      }
+      case 'awaitingStopWorkEnable': {
+        let message = text;
+        let untilIso = null;
+
+        if (text.includes(';')) {
+          const [maybeUntil, ...rest] = text.split(';');
+          const parsed = parseDateTime(maybeUntil.trim());
+          if (parsed) {
+            untilIso = parsed.toISOString();
+            message = rest.join(';').trim() || config.defaultStopWorkMessage;
+          }
+        }
+
+        message = message.trim();
+        if (!message) {
+          message = config.defaultStopWorkMessage;
+        }
+
+        await repository.setStopWork({ active: true, until: untilIso, message });
+        await ctx.reply(t('ru', 'stopWorkActivated'));
+        setAdminState(ctx.from.id, null);
+        break;
+      }
+      default:
+        setAdminState(ctx.from.id, null);
+        return false;
+    }
+  } catch (error) {
+    console.error('Admin state error', error);
+    await ctx.reply(`⚠️ Ошибка: ${error.message}`);
+  }
+
+  return true;
+}
+async function processUserState(ctx, providedUser) {
+  const state = userStates.get(Number(ctx.from.id));
+  if (!state) {
+    return false;
+  }
+
+  const user = providedUser || (await repository.getUser(ctx.from.id));
+  if (!user) {
+    clearUserState(ctx.from.id);
+    await ctx.reply(t('ru', 'userNotFound'));
+    return true;
+  }
+
+  const language = getUserLanguage(user);
+
+  if (state.type === 'awaitingLanguageChoice') {
+    await ctx.reply(t(language, 'languageReminder'));
+    return true;
+  }
+
+  if (state.type === 'awaitingComplaintSip') {
+    const line = await repository.getLine(state.payload.lineId);
+
+    if (!line) {
+      await ctx.reply(t(language, 'lineMissing'));
+      clearUserState(ctx.from.id);
+      return true;
+    }
+
+    const sipOptions = (state.payload?.sipOptions || getSipOptions(line)).filter(Boolean);
+
+    if (!sipOptions.length) {
+      userStates.set(Number(ctx.from.id), {
+        type: 'awaitingComplaintDescription',
+        payload: { lineId: line.id, sip: null },
+      });
+
+      await ctx.reply(
+        t(language, 'complaintLineChosen', {
+          lineTitle: line.title,
+          lineId: line.id,
+        })
+      );
+      return true;
+    }
+
+    const keyboard = buildSipKeyboard(line, sipOptions, language);
+    await ctx.reply(t(language, 'complaintSipReminder'), keyboard);
+    return true;
+  }
+
+  const mute = await ensureMuteState(user);
+  if (mute.muted) {
+    const untilText = formatDateForLanguage(mute.until, language) || mute.until;
+    await ctx.reply(t(language, 'muteActive', { until: untilText }));
+    return true;
+  }
+
+  if (state.type === 'awaitingComplaintDescription') {
+    const textMessage = ctx.message?.text;
+    if (!textMessage) {
+      return true;
+    }
+
+    const line = await repository.getLine(state.payload.lineId);
+
+    if (!line) {
+      await ctx.reply(t(language, 'lineMissing'));
+      clearUserState(ctx.from.id);
+      return true;
+    }
+
+    if (!line.groupId) {
+      await ctx.reply(t(language, 'lineNotConfigured'));
+      clearUserState(ctx.from.id);
+      return true;
+    }
+
+    const sip = state.payload?.sip || null;
+    const logParts = [
+      t('ru', 'complainLogTitle', {
+        userLabel: formatUserLabel(user),
+        lineTitle: line.title,
+        lineId: line.id,
+      }),
+    ];
+
+    if (sip) {
+      logParts.push(t('ru', 'complainLogSip', { sip }));
+    }
+
+    logParts.push('', t('ru', 'complainLogMessageLabel'), textMessage);
+
+    const logMessage = logParts.join('\n');
+
+    try {
+      await bot.telegram.sendMessage(line.groupId, logMessage);
+      await ctx.reply(t(language, 'complaintSent'));
+    } catch (error) {
+      console.error('Failed to send complaint', error);
+      await ctx.reply(t(language, 'complaintError'));
+    }
+
+    clearUserState(ctx.from.id);
+    return true;
+  }
+
+  return false;
+}
+
+bot.start(async (ctx) => {
+  const user = await repository.upsertUser(ctx.from);
+
+  if (!isAdmin(ctx.from.id) && (await isStopWork(ctx))) {
+    clearUserState(ctx.from.id);
+    return;
+  }
+
+  if (user.status === 'banned') {
+    await ctx.reply(t(getUserLanguage(user), 'banned'));
+    return;
+  }
+
+  if (isAdmin(ctx.from.id)) {
+    await ctx.reply(t('ru', 'adminPanel'), adminMenuKeyboard());
+    return;
+  }
+
+  if (user.status === 'active') {
+    if (!user.language) {
+      await promptLanguageSelection(user.id);
+      return;
+    }
+    await sendMainMenu(ctx, user);
+    return;
+  }
+
+  const { application, created } = await repository.createApplication(user.id);
+  const language = getUserLanguage(user);
+
+  if (created) {
+    await ctx.reply(t(language, 'pendingApplied'));
+    await notifyAdminsAboutApplication(user, application);
+  } else {
+    await ctx.reply(t(language, 'alreadyPending'));
+  }
+});
+
+bot.command('admin', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    return;
+  }
+
+  await ctx.reply(t('ru', 'adminPanel'), adminMenuKeyboard());
+});
+
+bot.hears(/жалоба|complaint/i, async (ctx) => {
+  if (isAdmin(ctx.from.id)) {
+    return;
+  }
+
+  const user = await repository.getUser(ctx.from.id);
+  const language = getUserLanguage(user);
+
+  if (await isStopWork(ctx)) {
+    clearUserState(ctx.from.id);
+    return;
+  }
+
+  if (!user || user.status !== 'active') {
+    await ctx.reply(t(language, 'notActive'));
+    return;
+  }
+
+  if (!user.language) {
+    await promptLanguageSelection(user.id);
+    return;
+  }
+
+  const mute = await ensureMuteState(user);
+  if (mute.muted) {
+    const untilText = formatDateForLanguage(mute.until, language) || mute.until;
+    await ctx.reply(t(language, 'muteActiveComplaints', { until: untilText }));
+    return;
+  }
+
+  if (!user.lineIds.length) {
+    await ctx.reply(t(language, 'notLinked'));
+    return;
+  }
+
+  const lines = await repository.getLines();
+  const userLines = lines.filter((line) => user.lineIds.includes(line.id));
+
+  if (!userLines.length) {
+    await ctx.reply(t(language, 'notLinked'));
+    return;
+  }
+
+  const keyboard = Markup.inlineKeyboard(
+    userLines.map((line) => [Markup.button.callback(`${line.title} (${line.id})`, `complaint:${line.id}`)])
+  );
+
+  await ctx.reply(t(language, 'complaintPrompt'), keyboard);
+});
+
+bot.action(/^complaint:(.+)$/i, async (ctx) => {
+  if (isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  if (await isStopWork(ctx)) {
+    await ctx.answerCbQuery('🚧');
+    clearUserState(ctx.from.id);
+    return;
+  }
+
+  const lineId = decodeCallbackComponent(ctx.match[1]);
+  const user = await repository.getUser(ctx.from.id);
+  const language = getUserLanguage(user);
+
+  if (!user || !user.lineIds.includes(lineId)) {
+    await ctx.answerCbQuery(t(language, 'noAccessLine'), { show_alert: true });
+    return;
+  }
+
+  const line = await repository.getLine(lineId);
+
+  if (!line) {
+    await ctx.answerCbQuery(t(language, 'lineMissing'), { show_alert: true });
+    return;
+  }
+
+  const sipOptions = getSipOptions(line);
+
+  if (sipOptions.length) {
+    userStates.set(Number(ctx.from.id), {
+      type: 'awaitingComplaintSip',
+      payload: { lineId, sipOptions },
+    });
+
+    const promptText = t(language, 'complaintChooseSip', {
+      lineTitle: line.title,
+      lineId: line.id,
+    });
+    const keyboard = buildSipKeyboard(line, sipOptions, language);
+
+    await ctx.answerCbQuery('✅');
+    try {
+      await ctx.editMessageText(promptText, keyboard);
+    } catch (error) {
+      await ctx.reply(promptText, keyboard);
+    }
+    return;
+  }
+
+  userStates.set(Number(ctx.from.id), {
+    type: 'awaitingComplaintDescription',
+    payload: { lineId, sip: null },
+  });
+
+  const responseText = t(language, 'complaintLineChosen', {
+    lineTitle: line?.title,
+    lineId,
+  });
+
+  await ctx.answerCbQuery('✅');
+  try {
+    await ctx.editMessageText(responseText);
+  } catch (error) {
+    await ctx.reply(responseText);
+  }
+});
+
+bot.action(/^complaintSip:([^:]+):(.+)$/i, async (ctx) => {
+  if (isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  if (await isStopWork(ctx)) {
+    await ctx.answerCbQuery('🚧');
+    clearUserState(ctx.from.id);
+    return;
+  }
+
+  const lineId = decodeCallbackComponent(ctx.match[1]);
+  const sip = decodeCallbackComponent(ctx.match[2]);
+  const user = await repository.getUser(ctx.from.id);
+  const language = getUserLanguage(user);
+
+  if (!user || !user.lineIds.includes(lineId)) {
+    await ctx.answerCbQuery(t(language, 'noAccessLine'), { show_alert: true });
+    return;
+  }
+
+  const line = await repository.getLine(lineId);
+
+  if (!line) {
+    await ctx.answerCbQuery(t(language, 'lineMissing'), { show_alert: true });
+    return;
+  }
+
+  const sipOptions = getSipOptions(line);
+
+  if (!sipOptions.includes(sip)) {
+    await ctx.answerCbQuery(t(language, 'complaintSipInvalid'), { show_alert: true });
+    return;
+  }
+
+  userStates.set(Number(ctx.from.id), {
+    type: 'awaitingComplaintDescription',
+    payload: { lineId, sip },
+  });
+
+  const responseText = t(language, 'complaintSipChosen', {
+    sip,
+    lineTitle: line.title,
+    lineId: line.id,
+  });
+
+  await ctx.answerCbQuery('✅');
+  try {
+    await ctx.editMessageText(responseText);
+  } catch (error) {
+    await ctx.reply(responseText);
+  }
+});
+
+bot.action(/^complaintBack:(.+)$/i, async (ctx) => {
+  if (isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const user = await repository.getUser(ctx.from.id);
+  const language = getUserLanguage(user);
+
+  if (!user || user.status !== 'active') {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  clearUserState(ctx.from.id);
+
+  await ctx.answerCbQuery();
+  await sendComplaintLineMenu(ctx, user, language, { edit: true });
+});
+
+bot.action(/^application:(confirm|decline):(.+)$/i, async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    return;
+  }
+
+  const action = ctx.match[1];
+  const applicationId = ctx.match[2];
+  const application = await repository.getApplicationById(applicationId);
+
+  if (!application) {
+    await ctx.answerCbQuery(t('ru', 'applicationNotFound'), { show_alert: true });
+    return;
+  }
+
+  const user = await repository.getUser(application.userId);
+
+  if (!user) {
+    await ctx.answerCbQuery(t('ru', 'applicationNotFound'), { show_alert: true });
+    return;
+  }
+
+  if (action === 'decline') {
+    await repository.updateApplication(applicationId, { status: 'declined' });
+    await repository.setUserStatus(user.id, 'declined');
+
+    await ctx.answerCbQuery(t('ru', 'applicationDeclinedCb'));
+    await ctx.editMessageText(
+      t('ru', 'applicationDeclinedAdmin', { userLabel: formatUserLabel(user) })
+    );
+
+    try {
+      await bot.telegram.sendMessage(
+        user.id,
+        t(getUserLanguage(user), 'applicationDeclinedUser')
+      );
+    } catch (error) {
+      console.error('Failed to notify user about decline', error);
+    }
+    return;
+  }
+
+  setAdminState(ctx.from.id, {
+    type: 'awaitingLineAssignment',
+    payload: { applicationId, userId: user.id },
+  });
+
+  await ctx.answerCbQuery(t('ru', 'applicationConfirmCb'), { show_alert: true });
+  await ctx.reply(
+    t('ru', 'adminAwaitLineId', { userLabel: formatUserLabel(user) })
+  );
+});
+bot.action('admin:back', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  await ctx.answerCbQuery();
+  await ctx.editMessageText(t('ru', 'adminPanel'), adminMenuKeyboard());
+});
+
+bot.action('admin:applications:list', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const pending = await repository.getPendingApplications();
+  if (!pending.length) {
+    await ctx.answerCbQuery(t('ru', 'pendingApplicationsEmpty'));
+    return;
+  }
+
+  const items = await Promise.all(
+    pending.map(async (application) => {
+      const user = await repository.getUser(application.userId);
+      return `${application.id}: ${formatUserLabel(user || { id: application.userId })}`;
+    })
+  );
+
+  await ctx.answerCbQuery();
+  await ctx.reply(t('ru', 'pendingApplicationsList', { items }));
+});
+
+bot.action('admin:lines:menu', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+  await ctx.answerCbQuery();
+  await ctx.editMessageText('🧭 Управление линиями:', adminLinesKeyboard());
+});
+
+bot.action('admin:lines:list', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const lines = await repository.getLines();
+  if (!lines.length) {
+    await ctx.answerCbQuery();
+    await ctx.reply(t('ru', 'linesListEmpty'));
+    return;
+  }
+
+  const text = lines
+    .map(
+      (line) =>
+        `⭐ ${line.title} (${line.id})\n👥 Пользователей: ${line.userIds.length}\n💬 Группа: ${line.groupId || 'не назначена'}`
+    )
+    .join('\n\n');
+
+  await ctx.answerCbQuery();
+  await ctx.reply(text);
+});
+
+bot.action('admin:lines:create', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  setAdminState(ctx.from.id, { type: 'awaitingLineCreation' });
+  await ctx.answerCbQuery();
+  await ctx.reply(t('ru', 'waitingForLineIdFormat'));
+});
+
+bot.action('admin:lines:attachUser', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+  setAdminState(ctx.from.id, { type: 'awaitingUserLineAttach' });
+  await ctx.answerCbQuery();
+  await ctx.reply(t('ru', 'attachUserFormat'));
+});
+
+bot.action('admin:lines:detachUser', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+  setAdminState(ctx.from.id, { type: 'awaitingUserLineDetach' });
+  await ctx.answerCbQuery();
+  await ctx.reply(t('ru', 'attachUserFormat'));
+});
+
+bot.action('admin:lines:setGroup', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+  setAdminState(ctx.from.id, { type: 'awaitingLineGroup' });
+  await ctx.answerCbQuery();
+  await ctx.reply(t('ru', 'setGroupFormat'));
+});
+
+bot.action('admin:users:menu', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+  await ctx.answerCbQuery();
+  await ctx.editMessageText('👥 Управление пользователями:', adminUsersKeyboard());
+});
+
+bot.action('admin:users:list', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const users = await repository.getUsers();
+  if (!users.length) {
+    await ctx.answerCbQuery();
+    await ctx.reply(t('ru', 'usersListEmpty'));
+    return;
+  }
+
+  const summary = users
+    .slice(0, 20)
+    .map((user) => `${formatUserLabel(user)} | Статус: ${user.status}`)
+    .join('\n');
+
+  const remainder = users.length > 20 ? t('ru', 'userListFooter', { count: users.length - 20 }) : '';
+
+  await ctx.answerCbQuery();
+  await ctx.reply(summary + remainder);
+});
+
+bot.action('admin:users:ban', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+  setAdminState(ctx.from.id, { type: 'awaitingBanUser' });
+  await ctx.answerCbQuery();
+  await ctx.reply(t('ru', 'banPrompt'));
+});
+
+bot.action('admin:users:mute', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+  setAdminState(ctx.from.id, { type: 'awaitingMuteUser' });
+  await ctx.answerCbQuery();
+  await ctx.reply(t('ru', 'mutePrompt'));
+});
+
+bot.action('admin:users:unmute', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+  setAdminState(ctx.from.id, { type: 'awaitingMuteUser' });
+  await ctx.answerCbQuery();
+  await ctx.reply(t('ru', 'unmutePrompt'));
+});
+
+bot.action('admin:stats', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const users = await repository.getUsers();
+  const lines = await repository.getLines();
+  const pending = await repository.getPendingApplications();
+
+  const banned = users.filter((user) => user.status === 'banned').length;
+  const active = users.filter((user) => user.status === 'active').length;
+
+  await ctx.answerCbQuery();
+  await ctx.reply(
+    t('ru', 'stats', {
+      totalUsers: users.length,
+      activeUsers: active,
+      bannedUsers: banned,
+      totalLines: lines.length,
+      pending: pending.length,
+    })
+  );
+});
+
+bot.action('admin:stopwork:menu', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const settings = await repository.getSettings();
+  const active = settings?.stopWork?.active;
+  const until = formatDateForLanguage(settings?.stopWork?.until, 'ru');
+  const message = settings?.stopWork?.message || config.defaultStopWorkMessage;
+
+  await ctx.answerCbQuery();
+  await ctx.editMessageText(
+    t('ru', 'stopWorkStatus', { active, until, message }),
+    adminStopWorkKeyboard(active)
+  );
+});
+
+bot.action('admin:stopwork:enable', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+  setAdminState(ctx.from.id, { type: 'awaitingStopWorkEnable' });
+  await ctx.answerCbQuery();
+  await ctx.reply(t('ru', 'stopWorkPrompt'));
+});
+
+bot.action('admin:stopwork:disable', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  await repository.setStopWork({ active: false, until: null, message: null });
+  await ctx.answerCbQuery(t('ru', 'stopWorkDisabled'));
+});
+
+bot.action('admin:settings', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+  await ctx.answerCbQuery();
+  await ctx.reply('⚙️ Настройки будут добавлены позднее.');
+});
+
+bot.action(/^language:(ru|en)$/i, async (ctx) => {
+  const language = ctx.match[1].toLowerCase();
+  const userId = ctx.from.id;
+
+  try {
+    const user = await repository.getUser(userId);
+    if (!user) {
+      await ctx.answerCbQuery('🚫', { show_alert: true });
+      return;
+    }
+
+    await repository.setUserLanguage(userId, language);
+    clearUserState(userId);
+
+    const languageName = LANGUAGE_NAMES[language];
+    const confirmation = t(language, 'languageConfirmed', { languageName });
+
+    await ctx.answerCbQuery('✅');
+    try {
+      await ctx.editMessageText(confirmation);
+    } catch (error) {
+      await ctx.reply(confirmation);
+    }
+
+    await sendMainMenu(ctx, { ...user, language });
+  } catch (error) {
+    console.error('Failed to set language', error);
+    await ctx.answerCbQuery('⚠️', { show_alert: true });
+  }
+});
+
+bot.on('text', async (ctx, next) => {
+  if (isAdmin(ctx.from.id)) {
+    const handled = await processAdminState(ctx);
+    if (handled) {
+      return;
+    }
+    await ctx.reply(t('ru', 'adminUseMenu'));
+    return;
+  }
+
+  const user = await repository.getUser(ctx.from.id);
+  const language = getUserLanguage(user);
+
+  if (await isStopWork(ctx)) {
+    clearUserState(ctx.from.id);
+    return;
+  }
+
+  if (!user) {
+    await ctx.reply(t('ru', 'userNotFound'));
+    return;
+  }
+
+  const handled = await processUserState(ctx, user);
+  if (handled) {
+    return;
+  }
+
+  await ctx.reply(t(language, 'menuReminder'), userKeyboard(language));
+  if (typeof next === 'function') {
+    await next();
+  }
+});
+
+bot.catch(async (error, ctx) => {
+  console.error('Bot error', error);
+  if (!ctx?.reply) {
+    return;
+  }
+
+  try {
+    const user = await repository.getUser(ctx.from?.id);
+    const language = getUserLanguage(user);
+    await ctx.reply(t(language, 'genericError'));
+  } catch (innerError) {
+    console.error('Failed to send error message', innerError);
+  }
+});
+
+bot
+  .launch()
+  .then(() => {
+    console.log('🤖 Bot started');
+  })
+  .catch((error) => {
+    console.error('Failed to launch bot', error);
+    process.exit(1);
+  });
+
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));

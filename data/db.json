@@ -1,0 +1,61 @@
+{
+  "settings": {
+    "stopWork": {
+      "active": false,
+      "until": null,
+      "message": null
+    }
+  },
+  "lines": [
+    {
+      "id": "101-105",
+      "title": "Линия 101-105",
+      "groupId": -1002882880119,
+      "userIds": [
+        8153349022
+      ],
+      "createdAt": "2025-10-01T15:54:50.324Z",
+      "updatedAt": "2025-10-01T15:56:48.742Z"
+    }
+  ],
+  "users": [
+    {
+      "id": 7480583172,
+      "username": "uglymove",
+      "firstName": "Прокуратура [Citadel-GSM]",
+      "lastName": null,
+      "status": "pending",
+      "lineIds": [],
+      "mutedUntil": null,
+      "language": null,
+      "createdAt": "2025-10-01T15:54:55.218Z",
+      "updatedAt": "2025-10-01T15:57:46.165Z"
+    },
+    {
+      "id": 8153349022,
+      "username": "itvertex",
+      "firstName": "Marceau Le Froid",
+      "lastName": null,
+      "status": "active",
+      "lineIds": [
+        "101-105"
+      ],
+      "mutedUntil": null,
+      "language": "ru",
+      "createdAt": "2025-10-01T15:56:33.583Z",
+      "updatedAt": "2025-10-01T15:56:54.294Z"
+    }
+  ],
+  "applications": [
+    {
+      "id": "PpTUx17gBe",
+      "userId": 8153349022,
+      "status": "approved",
+      "createdAt": "2025-10-01T15:56:33.586Z",
+      "updatedAt": "2025-10-01T15:56:48.745Z",
+      "lineId": "101-105",
+      "comment": null
+    }
+  ],
+  "admins": []
+}
