@@ -127,6 +127,8 @@ const translations = {
     complaintSipChosen: ({ sip, lineTitle, lineId }) =>
       `🎉 Номер ${sip} выбран для линии ${lineTitle || lineId}! Опишите проблему одним сообщением 👇`,
     complaintSipInvalid: '⚠️ Выберите номер из списка.',
+    complaintDescriptionReminder:
+      '💬 Отправьте текст жалобы одним сообщением или нажмите «❌ Отмена».',
     pendingApplicationsList: ({ items }) => `📥 Ожидающие заявки\n${items.join('\n')}`,
     pendingApplicationsEmpty: '✨ Нет активных заявок.',
     userListFooter: ({ count }) => `\n... и ещё ${count}`,
@@ -263,6 +265,8 @@ const translations = {
     complaintSipChosen: ({ sip, lineTitle, lineId }) =>
       `🎉 Number ${sip} selected for ${lineTitle || lineId}! Describe the issue in one message 👇`,
     complaintSipInvalid: '⚠️ Please choose a number from the list.',
+    complaintDescriptionReminder:
+      '💬 Please send your complaint text in a single message or tap “❌ Cancel”.',
     pendingApplicationsList: ({ items }) => `📥 Pending applications\n${items.join('\n')}`,
     pendingApplicationsEmpty: '✨ No pending applications.',
     userListFooter: ({ count }) => `\n... plus ${count} more`,
@@ -1242,6 +1246,7 @@ async function processUserState(ctx, providedUser) {
   if (state.type === 'awaitingComplaintDescription') {
     const textMessage = ctx.message?.text;
     if (!textMessage) {
+      await ctx.reply(t(language, 'complaintDescriptionReminder'));
       return true;
     }
 
