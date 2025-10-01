@@ -1,9 +1,68 @@
 ﻿const { nanoid } = require('nanoid');
-const { getDb } = require('./storage');
+const { getDb, defaultData } = require('./storage');
+
+function clone(value) {
+  return typeof structuredClone === 'function'
+    ? structuredClone(value)
+    : JSON.parse(JSON.stringify(value));
+}
+
+function applyDefaults(target, defaults) {
+  let changed = false;
+
+  for (const [key, defaultValue] of Object.entries(defaults)) {
+    const currentValue = target[key];
+
+    if (currentValue === undefined) {
+      let nextValue;
+
+      if (Array.isArray(defaultValue)) {
+        nextValue = [];
+      } else if (
+        defaultValue &&
+        typeof defaultValue === 'object'
+      ) {
+        nextValue = clone(defaultValue);
+      } else {
+        nextValue = defaultValue;
+      }
+
+      target[key] = nextValue;
+      changed = true;
+      continue;
+    }
+
+    if (
+      currentValue &&
+      typeof currentValue === 'object' &&
+      !Array.isArray(currentValue) &&
+      defaultValue &&
+      typeof defaultValue === 'object' &&
+      !Array.isArray(defaultValue)
+    ) {
+      if (applyDefaults(currentValue, defaultValue)) {
+        changed = true;
+      }
+    }
+  }
+
+  return changed;
+}
 
 async function readDb() {
   const db = await getDb();
   await db.read();
+
+  if (!db.data) {
+    db.data = clone(defaultData);
+    await db.write();
+    return db;
+  }
+
+  if (applyDefaults(db.data, defaultData)) {
+    await db.write();
+  }
+
   return db;
 }
 
