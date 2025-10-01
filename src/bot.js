@@ -11,6 +11,35 @@ const adminStates = new Map();
 let crocoStickerIds = null;
 let crocoStickerPromise = null;
 
+function isNil(value) {
+  return value === null || value === undefined;
+}
+
+function getNestedValue(source, path) {
+  if (isNil(source)) {
+    return undefined;
+  }
+
+  const keys = Array.isArray(path) ? path : String(path).split('.');
+  let result = source;
+
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+
+    if (isNil(result)) {
+      return undefined;
+    }
+
+    result = result[key];
+  }
+
+  return result;
+}
+
+function coalesce(value, fallback) {
+  return isNil(value) ? fallback : value;
+}
+
 const LANGUAGE_NAMES = {
   ru: 'Русский',
   en: 'English',
@@ -506,12 +535,12 @@ function ensureLanguage(code) {
 }
 
 function getUserLanguage(user) {
-  return ensureLanguage(user?.language);
+  return ensureLanguage(getNestedValue(user, 'language'));
 }
 
 function t(language, key, params = {}) {
   const code = ensureLanguage(language);
-  const value = translations[code][key] ?? translations.ru[key];
+  const value = coalesce(translations[code][key], translations.ru[key]);
   if (typeof value === 'function') {
     return value(params);
   }
@@ -540,7 +569,13 @@ async function loadCrocoStickerIds() {
 
   crocoStickerPromise = bot.telegram
     .getStickerSet('Crocosaurus')
-    .then((set) => set?.stickers?.map((item) => item.file_id) || [])
+    .then((set) => {
+      const stickers = getNestedValue(set, 'stickers');
+      if (!Array.isArray(stickers)) {
+        return [];
+      }
+      return stickers.map((item) => item.file_id);
+    })
     .catch((error) => {
       console.error('Failed to load Crocosaurus stickers', error);
       return [];
@@ -786,8 +821,9 @@ function formatApplicationButtonLabel(application, user) {
 
 function formatApplicationCard(application, user) {
   const userLabel = formatUserLabel(user || { id: application.userId });
-  const languageLabel = user?.language
-    ? LANGUAGE_NAMES[user.language] || user.language
+  const userLanguage = getNestedValue(user, 'language');
+  const languageLabel = userLanguage
+    ? LANGUAGE_NAMES[userLanguage] || userLanguage
     : '—';
   const createdAt = formatDateForLanguage(application.createdAt, 'ru');
   const updatedAt = formatDateForLanguage(application.updatedAt, 'ru');
@@ -834,7 +870,8 @@ async function editOrReply(ctx, text, keyboard) {
       await ctx.editMessageText(text);
     }
   } catch (error) {
-    if (error?.response?.description?.includes('message is not modified')) {
+    const errorDescription = getNestedValue(error, ['response', 'description']);
+    if (errorDescription && errorDescription.includes('message is not modified')) {
       return;
     }
 
@@ -1083,7 +1120,7 @@ async function promptLanguageSelection(userId, language = 'ru') {
 
 async function isStopWork(ctx) {
   const settings = await repository.getSettings();
-  const active = settings?.stopWork?.active;
+  const active = getNestedValue(settings, ['stopWork', 'active']);
 
   if (!active || isAdmin(ctx.from.id)) {
     return false;
@@ -1093,8 +1130,12 @@ async function isStopWork(ctx) {
   const language = getUserLanguage(user);
   const defaultMessage =
     settings.defaultStopWorkMessage || config.defaultStopWorkMessage;
-  const message = settings.stopWork.message || defaultMessage;
-  const untilText = formatDateForLanguage(settings.stopWork.until, language);
+  const message =
+    getNestedValue(settings, ['stopWork', 'message']) || defaultMessage;
+  const untilText = formatDateForLanguage(
+    getNestedValue(settings, ['stopWork', 'until']),
+    language
+  );
 
   await ctx.reply(t(language, 'stopWork', { until: untilText, message }));
   return true;
@@ -1111,17 +1152,18 @@ function parseDateTime(input) {
 }
 
 async function ensureMuteState(user) {
-  if (!user?.mutedUntil) {
+  const mutedUntil = getNestedValue(user, 'mutedUntil');
+  if (!mutedUntil) {
     return { muted: false, until: null };
   }
 
-  const untilDate = new Date(user.mutedUntil);
+  const untilDate = new Date(mutedUntil);
   if (Number.isNaN(untilDate.getTime()) || untilDate.getTime() <= Date.now()) {
     await repository.setUserMute(user.id, null);
     return { muted: false, until: null };
   }
 
-  return { muted: true, until: user.mutedUntil };
+  return { muted: true, until: mutedUntil };
 }
 
 async function sendMainMenu(ctx, user) {
@@ -1147,7 +1189,8 @@ async function processAdminState(ctx) {
     return false;
   }
 
-  const text = ctx.message?.text?.trim();
+  const messageText = getNestedValue(ctx, ['message', 'text']);
+  const text = messageText ? messageText.trim() : '';
   if (!text) {
     return true;
   }
@@ -1460,7 +1503,9 @@ async function processUserState(ctx, providedUser) {
       return true;
     }
 
-    const sipOptions = (state.payload?.sipOptions || getSipOptions(line)).filter(Boolean);
+    const sipOptions = (
+      getNestedValue(state, ['payload', 'sipOptions']) || getSipOptions(line)
+    ).filter(Boolean);
 
     if (!sipOptions.length) {
       userStates.set(Number(ctx.from.id), {
@@ -1490,7 +1535,7 @@ async function processUserState(ctx, providedUser) {
   }
 
   if (state.type === 'awaitingComplaintDescription') {
-    const textMessage = ctx.message?.text;
+    const textMessage = getNestedValue(ctx, ['message', 'text']);
     if (!textMessage) {
       await ctx.reply(t(language, 'complaintDescriptionReminder'));
       return true;
@@ -1524,8 +1569,8 @@ async function processUserState(ctx, providedUser) {
       return true;
     }
 
-    const sip = state.payload?.sip || null;
-    const coldProfileId = state.payload?.coldProfileId || null;
+    const sip = getNestedValue(state, ['payload', 'sip']) || null;
+    const coldProfileId = getNestedValue(state, ['payload', 'coldProfileId']) || null;
     const logParts = [
       t('ru', 'complainLogTitle', {
         userLabel: formatUserLabel(user),
@@ -1557,17 +1602,18 @@ async function processUserState(ctx, providedUser) {
     }
 
     try {
+      const complaintId = complaintRecord ? complaintRecord.id : undefined;
       const sentMessage = await bot.telegram.sendMessage(
         line.groupId,
         logMessage,
-        buildComplaintLogKeyboard(complaintRecord?.id, user.id)
+        buildComplaintLogKeyboard(complaintId, user.id)
       );
       await ctx.reply(t(language, 'complaintSent'));
       await sendRandomCrocoSticker(ctx);
 
       if (complaintRecord) {
         await repository.setComplaintLogInfo(complaintRecord.id, {
-          chatId: sentMessage.chat?.id,
+          chatId: getNestedValue(sentMessage, ['chat', 'id']),
           messageId: sentMessage.message_id,
         });
       }
@@ -1973,7 +2019,7 @@ bot.action(/^complaint:(.+)$/i, async (ctx) => {
   });
 
   const responseText = t(language, 'complaintLineChosen', {
-    lineTitle: line?.title,
+    lineTitle: line ? line.title : undefined,
     lineId,
   });
 
@@ -2546,7 +2592,7 @@ bot.action('admin:stats', async (ctx) => {
         t('ru', 'sipStatsTitle'),
         ...sipStats.map((item) =>
           t('ru', 'sipStatsRow', {
-            lineTitle: lineMap.get(item.lineId)?.title,
+            lineTitle: (lineMap.get(item.lineId) || {}).title,
             lineId: item.lineId,
             sip: item.sip,
             total: item.total,
@@ -2567,9 +2613,14 @@ bot.action('admin:stopwork:menu', async (ctx) => {
   }
 
   const settings = await repository.getSettings();
-  const active = settings?.stopWork?.active;
-  const until = formatDateForLanguage(settings?.stopWork?.until, 'ru');
-  const message = settings?.stopWork?.message || config.defaultStopWorkMessage;
+  const active = getNestedValue(settings, ['stopWork', 'active']);
+  const until = formatDateForLanguage(
+    getNestedValue(settings, ['stopWork', 'until']),
+    'ru'
+  );
+  const message =
+    getNestedValue(settings, ['stopWork', 'message']) ||
+    config.defaultStopWorkMessage;
 
   await ctx.answerCbQuery();
   await ctx.editMessageText(
@@ -2680,7 +2731,7 @@ bot.action(/^complaintLog:(resolve|cancel):(.+)$/i, async (ctx) => {
 
   const action = ctx.match[1];
   const identifier = ctx.match[2];
-  const message = ctx.callbackQuery?.message;
+  const message = getNestedValue(ctx, ['callbackQuery', 'message']);
   if (!message) {
     await ctx.answerCbQuery();
     return;
@@ -2697,7 +2748,7 @@ bot.action(/^complaintLog:(resolve|cancel):(.+)$/i, async (ctx) => {
     return;
   }
 
-  if (identifier?.startsWith('id:')) {
+  if (identifier && identifier.startsWith('id:')) {
     const complaintId = identifier.slice(3);
     if (complaintId) {
       const complaint = await repository.getComplaintById(complaintId);
@@ -2797,10 +2848,10 @@ bot.on('text', async (ctx, next) => {
     return;
   }
 
-  const coldProfile = user?.id
+  const coldProfile = user.id
     ? await repository.getColdProfileByUserId(user.id)
     : null;
-  const showColdButton = user?.status === 'active' && !coldProfile;
+  const showColdButton = user.status === 'active' && !coldProfile;
 
   await ctx.reply(
     t(language, 'menuReminder'),
@@ -2813,12 +2864,13 @@ bot.on('text', async (ctx, next) => {
 
 bot.catch(async (error, ctx) => {
   console.error('Bot error', error);
-  if (!ctx?.reply) {
+  if (!ctx || typeof ctx.reply !== 'function') {
     return;
   }
 
   try {
-    const user = await repository.getUser(ctx.from?.id);
+    const fromId = getNestedValue(ctx, ['from', 'id']);
+    const user = fromId ? await repository.getUser(fromId) : null;
     const language = getUserLanguage(user);
     await ctx.reply(t(language, 'genericError'));
   } catch (innerError) {

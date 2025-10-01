@@ -105,14 +105,16 @@ async function upsertUser(userPayload) {
       status: userPayload.status || 'pending',
       lineIds: userPayload.lineIds || [],
       mutedUntil: null,
-      language: userPayload.language ?? null,
+      language:
+        userPayload.language === undefined ? null : userPayload.language,
       createdAt: now(),
       updatedAt: now(),
     };
     db.data.users.push(user);
   } else {
     Object.assign(user, {
-      username: userPayload.username ?? user.username,
+      username:
+        userPayload.username === undefined ? user.username : userPayload.username,
       firstName:
         userPayload.first_name || userPayload.firstName || user.firstName,
       lastName: userPayload.last_name || userPayload.lastName || user.lastName,
