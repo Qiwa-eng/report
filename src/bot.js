@@ -57,6 +57,12 @@ const translations = {
     selectLineManualHint: '🔢 Введите ID линии для пользователя.',
     linesListEmpty: '📭 Линии ещё не созданы.',
     usersListEmpty: '📭 Пользователей пока нет.',
+    adminUsersStatusUpdated: '✅ Статус пользователя обновлён.',
+    adminUsersStatusUnchanged: 'ℹ️ Статус уже установлен.',
+    adminUsersMuteUpdated: ({ hours }) => `🔇 Мут установлен на ${hours} ч.`,
+    adminUsersMuteCleared: '🔊 Мут снят.',
+    adminUsersMuteAlreadyCleared: 'ℹ️ Мут не активен.',
+    adminUsersNotFound: 'Пользователь не найден.',
     stopWorkActivated: '🚧 Стоп-ворк активирован.',
     stopWorkDisabled: '✅ Стоп-ворк отключён.',
     muteRemoved: ({ userId }) => `🔊 Мут для пользователя ${userId} снят.`,
@@ -89,6 +95,15 @@ const translations = {
       `🚨 Жалоба от ${userLabel}\n📞 Линия: ${lineTitle || lineId}`,
     complainLogSip: ({ sip }) => `📟 SIP: ${sip}`,
     complainLogMessageLabel: '📝 Сообщение:',
+    complaintLogResolveButton: '✅ Решено',
+    complaintLogCancelButton: '❌ Отменить',
+    complaintLogResolvedNote: ({ userLabel }) =>
+      `✅ Решено администратором: ${userLabel}`,
+    complaintLogCancelledNote: ({ userLabel }) =>
+      `❌ Отменено администратором: ${userLabel}`,
+    complaintLogStatusUpdated: '✅ Статус жалобы обновлён.',
+    complaintLogStatusAlreadySet: 'ℹ️ Статус уже установлен.',
+    complaintLogNoAccess: '🚫 Нет доступа.',
     complaintPrompt: '📞 Выберите линию, чтобы оставить жалобу:',
     backButton: '⬅️ Назад',
     settingsPrompt: '⚙️ Настройки. Выберите действие ниже:',
@@ -182,6 +197,12 @@ const translations = {
     selectLineManualHint: '🔢 Enter the line ID for the user.',
     linesListEmpty: '📭 No lines created yet.',
     usersListEmpty: '📭 No users yet.',
+    adminUsersStatusUpdated: '✅ User status updated.',
+    adminUsersStatusUnchanged: 'ℹ️ Status is already set.',
+    adminUsersMuteUpdated: ({ hours }) => `🔇 Mute applied for ${hours}h.`,
+    adminUsersMuteCleared: '🔊 Mute removed.',
+    adminUsersMuteAlreadyCleared: 'ℹ️ No active mute.',
+    adminUsersNotFound: 'User not found.',
     stopWorkActivated: '🚧 Stop-work mode activated.',
     stopWorkDisabled: '✅ Stop-work disabled.',
     muteRemoved: ({ userId }) => `🔊 Mute removed for user ${userId}.`,
@@ -213,6 +234,13 @@ const translations = {
       `🚨 Complaint from ${userLabel}\n📞 Line: ${lineTitle || lineId}`,
     complainLogSip: ({ sip }) => `📟 SIP: ${sip}`,
     complainLogMessageLabel: '📝 Message:',
+    complaintLogResolveButton: '✅ Resolved',
+    complaintLogCancelButton: '❌ Cancel',
+    complaintLogResolvedNote: ({ userLabel }) => `✅ Resolved by: ${userLabel}`,
+    complaintLogCancelledNote: ({ userLabel }) => `❌ Cancelled by: ${userLabel}`,
+    complaintLogStatusUpdated: '✅ Complaint status updated.',
+    complaintLogStatusAlreadySet: 'ℹ️ Status already set.',
+    complaintLogNoAccess: '🚫 Access denied.',
     complaintPrompt: '📞 Choose a line for your complaint:',
     backButton: '⬅️ Back',
     settingsPrompt: '⚙️ Settings. Pick an option below:',
@@ -267,6 +295,27 @@ const translations = {
     genericError: '⚠️ An error occurred. Try again later.',
     menuReminder: '🔁 Use the menu buttons.',
   },
+};
+
+const COMPLAINT_STATUS_MARKERS = {
+  resolved: ['✅ Решено', '✅ Resolved'],
+  cancelled: ['❌ Отменено', '❌ Cancelled'],
+};
+
+const USERS_PAGE_SIZE = 8;
+
+const USER_STATUS_LABELS = {
+  active: 'Активен',
+  pending: 'На модерации',
+  banned: 'Забанен',
+  declined: 'Отклонён',
+};
+
+const USER_STATUS_ICONS = {
+  active: '🟢',
+  pending: '⏳',
+  banned: '⛔️',
+  declined: '❌',
 };
 
 const MAX_SIP_OPTIONS = 25;
@@ -459,6 +508,21 @@ function settingsInstructionsKeyboard(language) {
   ]);
 }
 
+function buildComplaintLogKeyboard(userId) {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback(
+        t('ru', 'complaintLogResolveButton'),
+        `complaintLog:resolve:${userId}`
+      ),
+      Markup.button.callback(
+        t('ru', 'complaintLogCancelButton'),
+        `complaintLog:cancel:${userId}`
+      ),
+    ],
+  ]);
+}
+
 async function sendSettingsMenu(ctx, language, { edit = false } = {}) {
   const text = t(language, 'settingsPrompt');
   const keyboard = userSettingsKeyboard(language);
@@ -565,6 +629,66 @@ function formatUserLabel(user) {
   return parts.join(' | ');
 }
 
+function formatUserLabelFromContext(from) {
+  if (!from) {
+    return 'ID: unknown';
+  }
+
+  const username = from.username ? `@${from.username}` : null;
+  const firstName = from.first_name || from.firstName || null;
+  const lastName = from.last_name || from.lastName || null;
+  const fullName = [firstName, lastName].filter(Boolean).join(' ').trim();
+
+  const parts = [];
+  if (username) {
+    parts.push(username);
+  }
+  if (fullName) {
+    parts.push(fullName);
+  }
+  parts.push(`ID: ${from.id}`);
+
+  return parts.join(' | ');
+}
+
+function formatUserButtonLabel(user) {
+  const icon = USER_STATUS_ICONS[user.status] || '👤';
+  if (user.username) {
+    return `${icon} @${user.username}`;
+  }
+
+  const fullName = [user.firstName, user.lastName]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+
+  if (fullName) {
+    return `${icon} ${fullName}`;
+  }
+
+  return `${icon} ID ${user.id}`;
+}
+
+async function editOrReply(ctx, text, keyboard) {
+  try {
+    if (keyboard) {
+      await ctx.editMessageText(text, keyboard);
+    } else {
+      await ctx.editMessageText(text);
+    }
+  } catch (error) {
+    if (error?.response?.description?.includes('message is not modified')) {
+      return;
+    }
+
+    if (keyboard) {
+      await ctx.reply(text, keyboard);
+    } else {
+      await ctx.reply(text);
+    }
+  }
+}
+
 function setAdminState(adminId, state) {
   if (state) {
     adminStates.set(Number(adminId), state);
@@ -599,6 +723,157 @@ async function notifyAdminsAboutApplication(user, application) {
         .catch(() => undefined)
     )
   );
+}
+
+function buildAdminUsersList(users, page = 0) {
+  const totalPages = Math.max(1, Math.ceil(users.length / USERS_PAGE_SIZE));
+  const safePage = Math.min(Math.max(page, 0), totalPages - 1);
+  const start = safePage * USERS_PAGE_SIZE;
+  const end = start + USERS_PAGE_SIZE;
+  const items = users.slice(start, end);
+
+  const buttons = items.map((user) => [
+    Markup.button.callback(
+      `${formatUserButtonLabel(user)} • ${user.id}`,
+      `admin:users:view:${user.id}:${safePage}`
+    ),
+  ]);
+
+  if (totalPages > 1) {
+    const navRow = [];
+    if (safePage > 0) {
+      navRow.push(
+        Markup.button.callback('⬅️ Предыдущие', `admin:users:page:${safePage - 1}`)
+      );
+    }
+    if (safePage < totalPages - 1) {
+      navRow.push(
+        Markup.button.callback('Следующие ➡️', `admin:users:page:${safePage + 1}`)
+      );
+    }
+    if (navRow.length) {
+      buttons.push(navRow);
+    }
+  }
+
+  buttons.push([Markup.button.callback('⬅️ Назад', 'admin:users:menu')]);
+
+  const total = users.length;
+  const active = users.filter((item) => item.status === 'active').length;
+  const pending = users.filter((item) => item.status === 'pending').length;
+  const banned = users.filter((item) => item.status === 'banned').length;
+  const declined = users.filter((item) => item.status === 'declined').length;
+
+  const summaryParts = [`Всего: ${total}`, `Активных: ${active}`];
+  if (pending) {
+    summaryParts.push(`На модерации: ${pending}`);
+  }
+  if (declined) {
+    summaryParts.push(`Отклонено: ${declined}`);
+  }
+  if (banned) {
+    summaryParts.push(`Забанено: ${banned}`);
+  }
+
+  const text = [
+    `👥 Пользователи (страница ${safePage + 1}/${totalPages})`,
+    summaryParts.join(' • '),
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  return { text, keyboard: Markup.inlineKeyboard(buttons), page: safePage };
+}
+
+function buildAdminUserDetailsKeyboard(user, page, isMuted) {
+  const statusActiveLabel =
+    user.status === 'active' ? '✅ Активен' : '✅ Активировать';
+  const statusBannedLabel =
+    user.status === 'banned' ? '⛔️ Заблокирован' : '⛔️ Забанить';
+  const unmuteLabel = isMuted ? '🔊 Снять мут' : '🔊 Мут отсутствует';
+
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback(
+        statusActiveLabel,
+        `admin:users:status:active:${user.id}:${page}`
+      ),
+      Markup.button.callback(
+        statusBannedLabel,
+        `admin:users:status:banned:${user.id}:${page}`
+      ),
+    ],
+    [
+      Markup.button.callback('🔇 Мут 1ч', `admin:users:mute:1:${user.id}:${page}`),
+      Markup.button.callback('🔇 Мут 4ч', `admin:users:mute:4:${user.id}:${page}`),
+    ],
+    [
+      Markup.button.callback('🔇 Мут 24ч', `admin:users:mute:24:${user.id}:${page}`),
+      Markup.button.callback(unmuteLabel, `admin:users:unmute:${user.id}:${page}`),
+    ],
+    [Markup.button.callback('⬅️ К списку', `admin:users:page:${page}`)],
+  ]);
+}
+
+async function renderAdminUsersPage(ctx, page = 0) {
+  const users = await repository.getUsers();
+  if (!users.length) {
+    return false;
+  }
+
+  const sortedUsers = [...users].sort((a, b) => {
+    const aTime = new Date(a.updatedAt || a.createdAt || 0).getTime();
+    const bTime = new Date(b.updatedAt || b.createdAt || 0).getTime();
+    return bTime - aTime;
+  });
+
+  const { text, keyboard } = buildAdminUsersList(sortedUsers, page);
+  await editOrReply(ctx, text, keyboard);
+  return true;
+}
+
+async function renderAdminUserDetails(ctx, userId, page = 0) {
+  const user = await repository.getUser(userId);
+  if (!user) {
+    return false;
+  }
+
+  const lines = await repository.getLines();
+  const lineTitles = user.lineIds
+    .map((lineId) => {
+      const line = lines.find((item) => item.id === lineId);
+      return line ? line.title || line.id : lineId;
+    })
+    .filter(Boolean);
+
+  const muteState = await ensureMuteState(user);
+  const muteText = muteState.muted
+    ? formatDateForLanguage(muteState.until, 'ru') || muteState.until
+    : '—';
+
+  const languageCode = user.language ? ensureLanguage(user.language) : null;
+  const languageLabel = languageCode ? LANGUAGE_NAMES[languageCode] : '—';
+  const createdAt = formatDateForLanguage(user.createdAt, 'ru');
+  const updatedAt = formatDateForLanguage(user.updatedAt, 'ru');
+
+  const details = [
+    `🙋‍♂️ ${formatUserLabel(user)}`,
+    `📊 Статус: ${USER_STATUS_LABELS[user.status] || user.status}`,
+    `🌐 Язык: ${languageLabel}`,
+    `🔇 Мут до: ${muteState.muted ? muteText : '—'}`,
+    `📞 Линии: ${lineTitles.length ? lineTitles.join(', ') : '—'}`,
+  ];
+
+  if (createdAt) {
+    details.push(`🗓 Создан: ${createdAt}`);
+  }
+  if (updatedAt) {
+    details.push(`♻️ Обновлён: ${updatedAt}`);
+  }
+
+  const keyboard = buildAdminUserDetailsKeyboard(user, page, muteState.muted);
+  await editOrReply(ctx, details.join('\n'), keyboard);
+  return true;
 }
 
 async function promptLanguageSelection(userId, language = 'ru') {
@@ -1016,7 +1291,11 @@ async function processUserState(ctx, providedUser) {
     const logMessage = logParts.join('\n');
 
     try {
-      await bot.telegram.sendMessage(line.groupId, logMessage);
+      await bot.telegram.sendMessage(
+        line.groupId,
+        logMessage,
+        buildComplaintLogKeyboard(user.id)
+      );
       await ctx.reply(t(language, 'complaintSent'));
     } catch (error) {
       console.error('Failed to send complaint', error);
@@ -1589,23 +1868,124 @@ bot.action('admin:users:list', async (ctx) => {
     await ctx.answerCbQuery();
     return;
   }
+  await ctx.answerCbQuery();
 
-  const users = await repository.getUsers();
-  if (!users.length) {
-    await ctx.answerCbQuery();
+  const rendered = await renderAdminUsersPage(ctx, 0);
+  if (!rendered) {
     await ctx.reply(t('ru', 'usersListEmpty'));
+  }
+});
+
+bot.action(/^admin:users:page:(\d+)$/i, async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
     return;
   }
 
-  const summary = users
-    .slice(0, 20)
-    .map((user) => `${formatUserLabel(user)} | Статус: ${user.status}`)
-    .join('\n');
-
-  const remainder = users.length > 20 ? t('ru', 'userListFooter', { count: users.length - 20 }) : '';
-
+  const page = Number(ctx.match[1] || 0);
   await ctx.answerCbQuery();
-  await ctx.reply(summary + remainder);
+
+  const rendered = await renderAdminUsersPage(ctx, page);
+  if (!rendered) {
+    await ctx.reply(t('ru', 'usersListEmpty'));
+  }
+});
+
+bot.action(/^admin:users:view:(\d+):(\d+)$/i, async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const userId = Number(ctx.match[1]);
+  const page = Number(ctx.match[2] || 0);
+  const rendered = await renderAdminUserDetails(ctx, userId, page);
+  if (!rendered) {
+    await ctx.answerCbQuery(t('ru', 'adminUsersNotFound'), { show_alert: true });
+    await renderAdminUsersPage(ctx, page);
+    return;
+  }
+  await ctx.answerCbQuery();
+});
+
+bot.action(/^admin:users:status:(active|banned):(\d+):(\d+)$/i, async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const status = ctx.match[1];
+  const userId = Number(ctx.match[2]);
+  const page = Number(ctx.match[3] || 0);
+
+  const user = await repository.getUser(userId);
+  if (!user) {
+    await ctx.answerCbQuery(t('ru', 'adminUsersNotFound'), { show_alert: true });
+    await renderAdminUsersPage(ctx, page);
+    return;
+  }
+
+  if (user.status === status) {
+    await ctx.answerCbQuery(t('ru', 'adminUsersStatusUnchanged'));
+    await renderAdminUserDetails(ctx, userId, page);
+    return;
+  }
+
+  await repository.setUserStatus(userId, status);
+  await ctx.answerCbQuery(t('ru', 'adminUsersStatusUpdated'));
+  await renderAdminUserDetails(ctx, userId, page);
+});
+
+bot.action(/^admin:users:mute:(\d+):(\d+):(\d+)$/i, async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const hours = Number(ctx.match[1]);
+  const userId = Number(ctx.match[2]);
+  const page = Number(ctx.match[3] || 0);
+
+  const user = await repository.getUser(userId);
+  if (!user) {
+    await ctx.answerCbQuery(t('ru', 'adminUsersNotFound'), { show_alert: true });
+    await renderAdminUsersPage(ctx, page);
+    return;
+  }
+
+  const until = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+  await repository.setUserMute(userId, until);
+
+  await ctx.answerCbQuery(t('ru', 'adminUsersMuteUpdated', { hours }));
+  await renderAdminUserDetails(ctx, userId, page);
+});
+
+bot.action(/^admin:users:unmute:(\d+):(\d+)$/i, async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const userId = Number(ctx.match[1]);
+  const page = Number(ctx.match[2] || 0);
+
+  const user = await repository.getUser(userId);
+  if (!user) {
+    await ctx.answerCbQuery(t('ru', 'adminUsersNotFound'), { show_alert: true });
+    await renderAdminUsersPage(ctx, page);
+    return;
+  }
+
+  const muteState = await ensureMuteState(user);
+  if (!muteState.muted) {
+    await ctx.answerCbQuery(t('ru', 'adminUsersMuteAlreadyCleared'));
+    await renderAdminUserDetails(ctx, userId, page);
+    return;
+  }
+
+  await repository.setUserMute(userId, null);
+  await ctx.answerCbQuery(t('ru', 'adminUsersMuteCleared'));
+  await renderAdminUserDetails(ctx, userId, page);
 });
 
 bot.action('admin:users:ban', async (ctx) => {
@@ -1771,6 +2151,47 @@ bot.action('admin:settings:show', async (ctx) => {
       defaultMessage,
     })
   );
+});
+
+bot.action(/^complaintLog:(resolve|cancel):(\d+)$/i, async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery(t('ru', 'complaintLogNoAccess'), {
+      show_alert: true,
+    });
+    return;
+  }
+
+  const action = ctx.match[1];
+  const message = ctx.callbackQuery?.message;
+  if (!message) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const originalText = message.text || message.caption || '';
+  const alreadyHandled = [
+    ...COMPLAINT_STATUS_MARKERS.resolved,
+    ...COMPLAINT_STATUS_MARKERS.cancelled,
+  ].some((marker) => originalText.includes(marker));
+
+  if (alreadyHandled) {
+    await ctx.answerCbQuery(t('ru', 'complaintLogStatusAlreadySet'));
+    return;
+  }
+
+  const actorLabel = formatUserLabelFromContext(ctx.from);
+  const noteKey =
+    action === 'resolve' ? 'complaintLogResolvedNote' : 'complaintLogCancelledNote';
+  const note = t('ru', noteKey, { userLabel: actorLabel });
+  const newText = [originalText, note].filter(Boolean).join('\n\n');
+
+  try {
+    await ctx.editMessageText(newText, Markup.inlineKeyboard([]));
+    await ctx.answerCbQuery(t('ru', 'complaintLogStatusUpdated'));
+  } catch (error) {
+    console.error('Failed to update complaint status', error);
+    await ctx.answerCbQuery(t('ru', 'genericError'), { show_alert: true });
+  }
 });
 
 bot.action(/^language:(ru|en)$/i, async (ctx) => {
