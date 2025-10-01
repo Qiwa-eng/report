@@ -491,7 +491,7 @@ function buildSipKeyboard(line, options, language) {
     Markup.callbackButton(t(language, 'complaintCancelButton'), 'complaintCancel'),
   ]);
 
-  return Markup.inlineKeyboard(rows);
+  return Markup.inlineKeyboard(rows).extra();
 }
 
 async function sendComplaintLineMenu(ctx, user, language, { edit = false } = {}) {
@@ -512,7 +512,7 @@ async function sendComplaintLineMenu(ctx, user, language, { edit = false } = {})
 
   keyboardRows.push([Markup.callbackButton(t(language, 'complaintCancelButton'), 'complaintCancel')]);
 
-  const keyboard = Markup.inlineKeyboard(keyboardRows);
+  const keyboard = Markup.inlineKeyboard(keyboardRows).extra();
 
   const text = t(language, 'complaintPrompt');
 
@@ -614,7 +614,7 @@ function userKeyboard(language, { showColdButton = false } = {}) {
   }
 
   rows.push([{ text: t(language, 'settingsButton') }]);
-  return Markup.keyboard(rows).resize();
+  return Markup.keyboard(rows).resize().extra();
 }
 
 function userSettingsKeyboard(language) {
@@ -631,13 +631,13 @@ function userSettingsKeyboard(language) {
         'settings:instructions'
       ),
     ],
-  ]);
+  ]).extra();
 }
 
 function settingsInstructionsKeyboard(language) {
   return Markup.inlineKeyboard([
     [Markup.callbackButton(t(language, 'backButton'), 'settings:menu')],
-  ]);
+  ]).extra();
 }
 
 function buildComplaintLogKeyboard(complaintId, fallbackUserId) {
@@ -648,7 +648,7 @@ function buildComplaintLogKeyboard(complaintId, fallbackUserId) {
       : null;
 
   if (!identifier) {
-    return Markup.inlineKeyboard([]);
+    return Markup.inlineKeyboard([]).extra();
   }
 
   return Markup.inlineKeyboard([
@@ -662,7 +662,7 @@ function buildComplaintLogKeyboard(complaintId, fallbackUserId) {
         `complaintLog:cancel:${identifier}`
       ),
     ],
-  ]);
+  ]).extra();
 }
 
 async function sendSettingsMenu(ctx, language, { edit = false } = {}) {
@@ -687,7 +687,7 @@ function languageSelectionKeyboard() {
       Markup.callbackButton('🇷🇺 Русский', 'language:ru'),
       Markup.callbackButton('🇬🇧 English', 'language:en'),
     ],
-  ]);
+  ]).extra();
 }
 
 function adminMenuKeyboard() {
@@ -698,7 +698,7 @@ function adminMenuKeyboard() {
     [Markup.callbackButton('📊 Статистика', 'admin:stats')],
     [Markup.callbackButton('⛔️ Стоп ворк', 'admin:stopwork:menu')],
     [Markup.callbackButton('⚙️ Настройки', 'admin:settings')],
-  ]);
+  ]).extra();
 }
 
 function adminLinesKeyboard() {
@@ -709,7 +709,7 @@ function adminLinesKeyboard() {
     [Markup.callbackButton('✂️ Отвязать пользователя', 'admin:lines:detachUser')],
     [Markup.callbackButton('📡 Назначить группу логов', 'admin:lines:setGroup')],
     [Markup.callbackButton('⬅️ Назад', 'admin:back')],
-  ]);
+  ]).extra();
 }
 
 function adminSettingsKeyboard(language) {
@@ -728,7 +728,7 @@ function adminSettingsKeyboard(language) {
       ),
     ],
     [Markup.callbackButton(t(code, 'backButton'), 'admin:back')],
-  ]);
+  ]).extra();
 }
 
 function adminUsersKeyboard() {
@@ -738,7 +738,7 @@ function adminUsersKeyboard() {
     [Markup.callbackButton('🔇 Мут', 'admin:users:mute')],
     [Markup.callbackButton('🔊 Снять мут', 'admin:users:unmute')],
     [Markup.callbackButton('⬅️ Назад', 'admin:back')],
-  ]);
+  ]).extra();
 }
 
 function adminStopWorkKeyboard(active) {
@@ -749,7 +749,7 @@ function adminStopWorkKeyboard(active) {
     buttons.push([Markup.callbackButton('🚧 Включить', 'admin:stopwork:enable')]);
   }
   buttons.push([Markup.callbackButton('⬅️ Назад', 'admin:back')]);
-  return Markup.inlineKeyboard(buttons);
+  return Markup.inlineKeyboard(buttons).extra();
 }
 
 function isAdmin(userId) {
@@ -908,7 +908,7 @@ async function notifyAdminsAboutApplication(user, application) {
       Markup.callbackButton('❌ Отклонить', `application:decline:${application.id}`),
       Markup.callbackButton('✅ Подтвердить', `application:confirm:${application.id}`),
     ],
-  ]);
+  ]).extra();
 
   await Promise.all(
     config.admins.map((adminId) =>
@@ -976,7 +976,7 @@ function buildAdminUsersList(users, page = 0) {
     .filter(Boolean)
     .join('\n');
 
-  return { text, keyboard: Markup.inlineKeyboard(buttons), page: safePage };
+  return { text, keyboard: Markup.inlineKeyboard(buttons).extra(), page: safePage };
 }
 
 function buildAdminUserDetailsKeyboard(user, page, isMuted, options = {}) {
@@ -1019,7 +1019,7 @@ function buildAdminUserDetailsKeyboard(user, page, isMuted, options = {}) {
 
   rows.push([Markup.callbackButton('⬅️ К списку', `admin:users:page:${page}`)]);
 
-  return Markup.inlineKeyboard(rows);
+  return Markup.inlineKeyboard(rows).extra();
 }
 
 async function renderAdminUsersPage(ctx, page = 0) {
@@ -2214,7 +2214,7 @@ bot.action('admin:applications:list', async (ctx) => {
         `admin:applications:open:${application.id}`
       ),
     ])
-  );
+  ).extra();
 
   await ctx.answerCbQuery();
   await editOrReply(ctx, t('ru', 'pendingApplicationsList', { items }), keyboard);
@@ -2242,7 +2242,7 @@ bot.action(/^admin:applications:open:(.+)$/, async (ctx) => {
       Markup.callbackButton('❌ Отклонить', `application:decline:${application.id}`),
     ],
     [Markup.callbackButton('⬅️ Назад', 'admin:applications:list')],
-  ]);
+  ]).extra();
 
   await ctx.answerCbQuery();
   await editOrReply(ctx, formatApplicationCard(application, user), keyboard);
@@ -2413,7 +2413,7 @@ bot.action(/^admin:users:cold:menu:(\d+):(\d+)$/i, async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.editMessageText(
     t('ru', 'coldAdminChooseLine'),
-    Markup.inlineKeyboard(buttons)
+    Markup.inlineKeyboard(buttons).extra()
   );
 });
 
@@ -2780,7 +2780,7 @@ bot.action(/^complaintLog:(resolve|cancel):(.+)$/i, async (ctx) => {
   const newText = [originalText, note].filter(Boolean).join('\n\n');
 
   try {
-    await ctx.editMessageText(newText, Markup.inlineKeyboard([]));
+    await ctx.editMessageText(newText, Markup.inlineKeyboard([]).extra());
     await ctx.answerCbQuery(t('ru', 'complaintLogStatusUpdated'));
   } catch (error) {
     console.error('Failed to update complaint status', error);
