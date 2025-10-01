@@ -61,6 +61,23 @@ const translations = {
     muteRemoved: ({ userId }) => `🔊 Мут для пользователя ${userId} снят.`,
     muted: ({ userId, hours }) => `🔇 Пользователь ${userId} замьючен на ${hours} ч.`,
     bannedUser: ({ userId }) => `⛔️ Пользователь ${userId} забанен.`,
+    adminSettingsTitle: '⚙️ Настройки администратора.',
+    adminSettingsStopWorkMessageButton: '✏️ Сообщение стоп-ворка',
+    adminSettingsShowConfigButton: '📄 Текущая конфигурация',
+    adminSettingsStopWorkMessagePrompt:
+      '💬 Отправьте текст сообщения стоп-ворка по умолчанию. Чтобы сбросить, отправьте "-".',
+    adminSettingsStopWorkMessageUpdated:
+      '✅ Сообщение стоп-ворка по умолчанию обновлено.',
+    adminSettingsStopWorkMessageCurrent: ({ message }) =>
+      `ℹ️ Текущее сообщение: ${message || '—'}`,
+    adminSettingsConfig: ({ stopWorkActive, stopWorkUntil, stopWorkMessage, defaultMessage }) =>
+      [
+        '⚙️ Текущие настройки:',
+        `🚧 Стоп-ворк: ${stopWorkActive ? 'активен' : 'выключен'}`,
+        `🗓 До: ${stopWorkUntil || '—'}`,
+        `💬 Сообщение стоп-ворка: ${stopWorkMessage || '—'}`,
+        `💬 Сообщение по умолчанию: ${defaultMessage || '—'}`,
+      ].join('\n'),
     attachedUser: ({ userLabel, lineTitle, lineId }) =>
       `🔗 ${userLabel} привязан к линии ${lineTitle || lineId}.`,
     detachedUser: ({ userId, lineId }) => `✂️ Пользователь ${userId} отвязан от линии ${lineId}.`,
@@ -154,6 +171,22 @@ const translations = {
     muteRemoved: ({ userId }) => `🔊 Mute removed for user ${userId}.`,
     muted: ({ userId, hours }) => `🔇 User ${userId} muted for ${hours}h.`,
     bannedUser: ({ userId }) => `⛔️ User ${userId} banned.`,
+    adminSettingsTitle: '⚙️ Administrator settings.',
+    adminSettingsStopWorkMessageButton: '✏️ Stop-work message',
+    adminSettingsShowConfigButton: '📄 Current configuration',
+    adminSettingsStopWorkMessagePrompt:
+      '💬 Send the default stop-work message text. Send "-" to reset.',
+    adminSettingsStopWorkMessageUpdated: '✅ Default stop-work message updated.',
+    adminSettingsStopWorkMessageCurrent: ({ message }) =>
+      `ℹ️ Current message: ${message || '—'}`,
+    adminSettingsConfig: ({ stopWorkActive, stopWorkUntil, stopWorkMessage, defaultMessage }) =>
+      [
+        '⚙️ Current configuration:',
+        `🚧 Stop-work: ${stopWorkActive ? 'enabled' : 'disabled'}`,
+        `🗓 Until: ${stopWorkUntil || '—'}`,
+        `💬 Stop-work message: ${stopWorkMessage || '—'}`,
+        `💬 Default message: ${defaultMessage || '—'}`,
+      ].join('\n'),
     attachedUser: ({ userLabel, lineTitle, lineId }) =>
       `🔗 ${userLabel} linked to ${lineTitle || lineId}.`,
     detachedUser: ({ userId, lineId }) => `✂️ User ${userId} unlinked from ${lineId}.`,
@@ -398,6 +431,25 @@ function adminLinesKeyboard() {
   ]);
 }
 
+function adminSettingsKeyboard(language) {
+  const code = ensureLanguage(language);
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback(
+        t(code, 'adminSettingsStopWorkMessageButton'),
+        'admin:settings:stopworkMessage'
+      ),
+    ],
+    [
+      Markup.button.callback(
+        t(code, 'adminSettingsShowConfigButton'),
+        'admin:settings:show'
+      ),
+    ],
+    [Markup.button.callback(t(code, 'backButton'), 'admin:back')],
+  ]);
+}
+
 function adminUsersKeyboard() {
   return Markup.inlineKeyboard([
     [Markup.button.callback('📋 Список пользователей', 'admin:users:list')],
@@ -493,7 +545,9 @@ async function isStopWork(ctx) {
 
   const user = await repository.getUser(ctx.from.id);
   const language = getUserLanguage(user);
-  const message = settings.stopWork.message || config.defaultStopWorkMessage;
+  const defaultMessage =
+    settings.defaultStopWorkMessage || config.defaultStopWorkMessage;
+  const message = settings.stopWork.message || defaultMessage;
   const untilText = formatDateForLanguage(settings.stopWork.until, language);
 
   await ctx.reply(t(language, 'stopWork', { until: untilText, message }));
@@ -724,17 +778,40 @@ async function processAdminState(ctx) {
           const parsed = parseDateTime(maybeUntil.trim());
           if (parsed) {
             untilIso = parsed.toISOString();
-            message = rest.join(';').trim() || config.defaultStopWorkMessage;
+            const defaultMessage =
+              (await repository.getDefaultStopWorkMessage()) ||
+              config.defaultStopWorkMessage;
+            message = rest.join(';').trim() || defaultMessage;
           }
         }
 
         message = message.trim();
         if (!message) {
-          message = config.defaultStopWorkMessage;
+          const defaultMessage =
+            (await repository.getDefaultStopWorkMessage()) ||
+            config.defaultStopWorkMessage;
+          message = defaultMessage;
         }
 
         await repository.setStopWork({ active: true, until: untilIso, message });
         await ctx.reply(t('ru', 'stopWorkActivated'));
+        setAdminState(ctx.from.id, null);
+        break;
+      }
+      case 'awaitingDefaultStopWorkMessage': {
+        const language = state.language || 'ru';
+        const normalized = text === '-' ? '' : text.trim();
+        const stored = await repository.setDefaultStopWorkMessage(normalized);
+        const finalMessage = stored || config.defaultStopWorkMessage;
+
+        const confirmation = [
+          t(language, 'adminSettingsStopWorkMessageUpdated'),
+          t(language, 'adminSettingsStopWorkMessageCurrent', {
+            message: finalMessage,
+          }),
+        ].join('\n');
+
+        await ctx.reply(confirmation);
         setAdminState(ctx.from.id, null);
         break;
       }
@@ -1377,8 +1454,71 @@ bot.action('admin:settings', async (ctx) => {
     await ctx.answerCbQuery();
     return;
   }
+  const user = await repository.getUser(ctx.from.id);
+  const language = getUserLanguage(user);
+
   await ctx.answerCbQuery();
-  await ctx.reply('⚙️ Настройки будут добавлены позднее.');
+
+  try {
+    await ctx.editMessageText(
+      t(language, 'adminSettingsTitle'),
+      adminSettingsKeyboard(language)
+    );
+  } catch (error) {
+    await ctx.reply(
+      t(language, 'adminSettingsTitle'),
+      adminSettingsKeyboard(language)
+    );
+  }
+});
+
+bot.action('admin:settings:stopworkMessage', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const user = await repository.getUser(ctx.from.id);
+  const language = getUserLanguage(user);
+  const settings = await repository.getSettings();
+  const defaultMessage =
+    settings.defaultStopWorkMessage || config.defaultStopWorkMessage;
+
+  setAdminState(ctx.from.id, { type: 'awaitingDefaultStopWorkMessage', language });
+
+  await ctx.answerCbQuery();
+  const message = [
+    t(language, 'adminSettingsStopWorkMessagePrompt'),
+    t(language, 'adminSettingsStopWorkMessageCurrent', { message: defaultMessage }),
+  ].join('\n');
+
+  await ctx.reply(message);
+});
+
+bot.action('admin:settings:show', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const user = await repository.getUser(ctx.from.id);
+  const language = getUserLanguage(user);
+  const settings = await repository.getSettings();
+  const stopWork = settings.stopWork || {};
+  const stopWorkUntil = formatDateForLanguage(stopWork.until, language);
+  const defaultMessage =
+    settings.defaultStopWorkMessage || config.defaultStopWorkMessage;
+
+  await ctx.answerCbQuery();
+
+  await ctx.reply(
+    t(language, 'adminSettingsConfig', {
+      stopWorkActive: Boolean(stopWork.active),
+      stopWorkUntil,
+      stopWorkMessage: stopWork.message || '',
+      defaultMessage,
+    })
+  );
 });
 
 bot.action(/^language:(ru|en)$/i, async (ctx) => {

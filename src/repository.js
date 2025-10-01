@@ -258,6 +258,19 @@ async function getSettings() {
   return db.data.settings;
 }
 
+async function setDefaultStopWorkMessage(message) {
+  const db = await readDb();
+  const value = typeof message === 'string' ? message.trim() : '';
+  db.data.settings.defaultStopWorkMessage = value ? value : null;
+  await writeDb(db);
+  return db.data.settings.defaultStopWorkMessage;
+}
+
+async function getDefaultStopWorkMessage() {
+  const db = await readDb();
+  return db.data.settings.defaultStopWorkMessage || null;
+}
+
 module.exports = {
   upsertUser,
   setUserStatus,
@@ -278,4 +291,6 @@ module.exports = {
   getPendingApplications,
   setStopWork,
   getSettings,
+  setDefaultStopWorkMessage,
+  getDefaultStopWorkMessage,
 };

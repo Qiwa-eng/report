@@ -8,6 +8,7 @@ const defaultData = {
       until: null,
       message: null,
     },
+    defaultStopWorkMessage: null,
   },
   lines: [],
   users: [],
