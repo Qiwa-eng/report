@@ -90,6 +90,8 @@ const translations = {
     complainLogMessageLabel: '📝 Сообщение:',
     complaintPrompt: '📞 Выберите линию, чтобы оставить жалобу:',
     backButton: '⬅️ Назад',
+    complaintCancelButton: '❌ Отмена',
+    complaintCancelled: '✅ Жалоба отменена. Возвращаем вас в главное меню.',
     complaintChooseSip: ({ lineTitle, lineId }) =>
       `📟 Выберите конкретный номер из диапазона ${lineTitle || lineId}`,
     complaintSipReminder:
@@ -199,6 +201,8 @@ const translations = {
     complainLogMessageLabel: '📝 Message:',
     complaintPrompt: '📞 Choose a line for your complaint:',
     backButton: '⬅️ Back',
+    complaintCancelButton: '❌ Cancel',
+    complaintCancelled: '✅ Complaint cancelled. Back to the main menu.',
     complaintChooseSip: ({ lineTitle, lineId }) =>
       `📟 Pick a specific number from ${lineTitle || lineId}`,
     complaintSipReminder: '📟 Please pick a specific number using the buttons below.',
@@ -329,6 +333,7 @@ function buildSipKeyboard(line, options, language) {
       t(language, 'backButton'),
       `complaintBack:${encodeCallbackComponent(line.id)}`
     ),
+    Markup.button.callback(t(language, 'complaintCancelButton'), 'complaintCancel'),
   ]);
 
   return Markup.inlineKeyboard(rows);
@@ -343,14 +348,16 @@ async function sendComplaintLineMenu(ctx, user, language, { edit = false } = {})
     return;
   }
 
-  const keyboard = Markup.inlineKeyboard(
-    userLines.map((line) => [
-      Markup.button.callback(
-        formatLineButtonLabel(line),
-        `complaint:${encodeCallbackComponent(line.id)}`
-      ),
-    ])
-  );
+  const keyboardRows = userLines.map((line) => [
+    Markup.button.callback(
+      formatLineButtonLabel(line),
+      `complaint:${encodeCallbackComponent(line.id)}`
+    ),
+  ]);
+
+  keyboardRows.push([Markup.button.callback(t(language, 'complaintCancelButton'), 'complaintCancel')]);
+
+  const keyboard = Markup.inlineKeyboard(keyboardRows);
 
   const text = t(language, 'complaintPrompt');
 
@@ -890,6 +897,20 @@ async function processUserState(ctx, providedUser) {
       return true;
     }
 
+    const normalizedText = textMessage.trim().toLowerCase();
+    const cancelVariants = ['/cancel', t(language, 'complaintCancelButton')];
+    if (
+      cancelVariants.some(
+        (variant) =>
+          typeof variant === 'string' && normalizedText === variant.trim().toLowerCase()
+      )
+    ) {
+      clearUserState(ctx.from.id);
+      await ctx.reply(t(language, 'complaintCancelled'));
+      await sendMainMenu(ctx, user);
+      return true;
+    }
+
     const line = await repository.getLine(state.payload.lineId);
 
     if (!line) {
@@ -1162,6 +1183,22 @@ bot.action(/^complaintBack:(.+)$/i, async (ctx) => {
 
   await ctx.answerCbQuery();
   await sendComplaintLineMenu(ctx, user, language, { edit: true });
+});
+
+bot.action('complaintCancel', async (ctx) => {
+  if (isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+
+  const user = await repository.getUser(ctx.from.id);
+  const language = getUserLanguage(user);
+
+  clearUserState(ctx.from.id);
+
+  await ctx.answerCbQuery();
+  await ctx.reply(t(language, 'complaintCancelled'));
+  await sendMainMenu(ctx, user);
 });
 
 bot.action(/^application:(confirm|decline):(.+)$/i, async (ctx) => {
