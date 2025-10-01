@@ -159,6 +159,44 @@ const translations = {
     coldListTitle: '📋 Подключённые холодки:',
     coldProfileStatusPending: '⏳ ждёт подключения',
     coldProfileStatusActive: '✅ подключена',
+    coldSetupTitle: '❄️ Настройка холодки.',
+    coldSetupMenuPrompt: 'Выберите действие ниже:',
+    coldSetupAddButton: '➕ Подключить холодку',
+    coldSetupManageButton: '⚙️ Настроить',
+    coldSetupRemoveButton: '🗑 Отключить',
+    coldProfileDetails: ({ username, lineTitle, lineId, sip, status }) =>
+      [
+        `❄️ ${username}`,
+        `📞 Линия: ${lineTitle || lineId}`,
+        `📟 SIP: ${sip}`,
+        `📊 Статус: ${status}`,
+      ].join('\n'),
+    coldSetupChooseLine: 'Выберите линию для холодки:',
+    coldSetupNoLines: 'У вас нет привязанных линий для холодки.',
+    coldSetupChooseSip: ({ lineTitle, lineId }) =>
+      `Выберите SIP номер для ${lineTitle || lineId}:`,
+    coldSetupSipManualButton: '✏️ Ввести SIP вручную',
+    coldSetupEnterSip: ({ lineTitle, lineId }) =>
+      `Отправьте SIP номер для ${lineTitle || lineId}.`,
+    coldSetupEnterUsername:
+      'Отправьте @username холодки. Пример: @example.',
+    coldSetupInvalidUsername:
+      'Пожалуйста, отправьте корректный username (например, @example).',
+    coldSetupInvalidSip: 'Пожалуйста, отправьте корректный SIP номер.',
+    coldSetupSaved: ({ username, lineTitle, lineId, sip }) =>
+      [
+        '✅ Холодка сохранена.',
+        `👤 Username: ${username}`,
+        `📞 Линия: ${lineTitle || lineId}`,
+        `📟 SIP: ${sip}`,
+        '🚀 Передайте этому аккаунту запустить бота, чтобы завершить подключение.',
+      ].join('\n'),
+    coldSetupUsernameInUse: 'Этот username уже используется для другой холодки.',
+    coldSetupCancelled: '❌ Настройка холодки отменена.',
+    coldRemoved: '🗑 Холодка отключена.',
+    coldSetupCancelButton: '❌ Отмена',
+    coldRemoveConfirm: 'Вы уверены, что хотите отключить эту холодку?',
+    coldRemoveConfirmButton: '✅ Отключить',
     complaintChooseSip: ({ lineTitle, lineId }) =>
       `📟 Выберите конкретный номер из диапазона ${lineTitle || lineId}`,
     complaintSipReminder:
@@ -317,6 +355,44 @@ const translations = {
     coldListTitle: '📋 Connected cold agents:',
     coldProfileStatusPending: '⏳ waiting to connect',
     coldProfileStatusActive: '✅ connected',
+    coldSetupTitle: '❄️ Cold agent setup.',
+    coldSetupMenuPrompt: 'Choose an action below:',
+    coldSetupAddButton: '➕ Add cold agent',
+    coldSetupManageButton: '⚙️ Configure',
+    coldSetupRemoveButton: '🗑 Remove',
+    coldProfileDetails: ({ username, lineTitle, lineId, sip, status }) =>
+      [
+        `❄️ ${username}`,
+        `📞 Line: ${lineTitle || lineId}`,
+        `📟 SIP: ${sip}`,
+        `📊 Status: ${status}`,
+      ].join('\n'),
+    coldSetupChooseLine: 'Choose a line for the cold agent:',
+    coldSetupNoLines: 'You have no linked lines for a cold agent.',
+    coldSetupChooseSip: ({ lineTitle, lineId }) =>
+      `Pick a SIP number for ${lineTitle || lineId}:`,
+    coldSetupSipManualButton: '✏️ Enter SIP manually',
+    coldSetupEnterSip: ({ lineTitle, lineId }) =>
+      `Send the SIP number for ${lineTitle || lineId}.`,
+    coldSetupEnterUsername:
+      'Send the cold agent @username. Example: @example.',
+    coldSetupInvalidUsername:
+      'Please send a valid username (for example, @example).',
+    coldSetupInvalidSip: 'Please send a valid SIP number.',
+    coldSetupSaved: ({ username, lineTitle, lineId, sip }) =>
+      [
+        '✅ Cold agent saved.',
+        `👤 Username: ${username}`,
+        `📞 Line: ${lineTitle || lineId}`,
+        `📟 SIP: ${sip}`,
+        '🚀 Ask this account to start the bot to finish the setup.',
+      ].join('\n'),
+    coldSetupUsernameInUse: 'This username is already used by another cold agent.',
+    coldSetupCancelled: '❌ Cold agent setup cancelled.',
+    coldRemoved: '🗑 Cold agent removed.',
+    coldSetupCancelButton: '❌ Cancel',
+    coldRemoveConfirm: 'Are you sure you want to remove this cold agent?',
+    coldRemoveConfirmButton: '✅ Remove',
     complaintChooseSip: ({ lineTitle, lineId }) =>
       `📟 Pick a specific number from ${lineTitle || lineId}`,
     complaintSipReminder: '📟 Please pick a specific number using the buttons below.',
@@ -399,6 +475,24 @@ const APPLICATION_STATUS_LABELS = {
 };
 
 const MAX_SIP_OPTIONS = 25;
+const NEW_COLD_PROFILE_KEY = 'new';
+
+function normalizeColdUsername(value) {
+  if (!value) {
+    return '';
+  }
+
+  return String(value).trim().replace(/^@+/, '').toLowerCase();
+}
+
+function encodeColdProfileKey(profileId) {
+  return encodeCallbackComponent(profileId || NEW_COLD_PROFILE_KEY);
+}
+
+function decodeColdProfileKey(value) {
+  const decoded = decodeCallbackComponent(value);
+  return decoded === NEW_COLD_PROFILE_KEY ? null : decoded;
+}
 
 function encodeCallbackComponent(value) {
   return encodeURIComponent(String(value));
@@ -679,6 +773,228 @@ async function sendSettingsMenu(ctx, language, { edit = false } = {}) {
   }
 
   await ctx.reply(text, keyboard);
+}
+
+async function sendColdOverview(ctx, user, language, { edit = false } = {}) {
+  const [profiles, lines] = await Promise.all([
+    repository.getColdProfilesByOwner(user.id),
+    repository.getLines(),
+  ]);
+
+  const lineMap = new Map(lines.map((line) => [line.id, line]));
+
+  const listItems = profiles.map((profile) => {
+    const line = lineMap.get(profile.lineId);
+    const lineLabel = line ? line.title || line.id : profile.lineId;
+    const statusKey = profile.userId
+      ? 'coldProfileStatusActive'
+      : 'coldProfileStatusPending';
+    const status = t(language, statusKey);
+    const username = profile.username || `@${profile.normalizedUsername}`;
+    return `• ${username} — ${lineLabel}, SIP ${profile.sip} (${status})`;
+  });
+
+  const parts = [
+    t(language, 'coldSetupTitle'),
+    t(language, 'coldSetupMenuPrompt'),
+    '',
+    t(language, 'coldInstructions'),
+  ];
+
+  if (listItems.length) {
+    parts.push('', t(language, 'coldListTitle'), ...listItems);
+  } else {
+    parts.push('', t(language, 'coldNoProfiles'));
+  }
+
+  const buttonRows = profiles.map((profile) => {
+    const line = lineMap.get(profile.lineId);
+    const lineLabel = line ? line.title || line.id : profile.lineId;
+    const label = `${t(language, 'coldSetupManageButton')} • ${lineLabel} • SIP ${profile.sip}`;
+    return [
+      Markup.callbackButton(
+        label,
+        `cold:profile:${encodeCallbackComponent(profile.id)}`
+      ),
+    ];
+  });
+
+  if (user.lineIds.length) {
+    buttonRows.push([
+      Markup.callbackButton(t(language, 'coldSetupAddButton'), 'cold:setup:new'),
+    ]);
+  }
+
+  const keyboard = buttonRows.length
+    ? Markup.inlineKeyboard(buttonRows).extra()
+    : null;
+  const text = parts.join('\n');
+
+  if (edit) {
+    await editOrReply(ctx, text, keyboard || undefined);
+  } else if (keyboard) {
+    await ctx.reply(text, keyboard);
+  } else {
+    await ctx.reply(text);
+  }
+}
+
+async function sendColdLineSelection(ctx, user, language, { profileId } = {}) {
+  const lines = await repository.getLines();
+  const userLines = lines.filter((line) => user.lineIds.includes(line.id));
+
+  if (!userLines.length) {
+    await ctx.reply(t(language, 'coldSetupNoLines'));
+    return;
+  }
+
+  clearUserState(ctx.from.id);
+
+  const profileKey = encodeColdProfileKey(profileId);
+
+  const buttons = userLines.map((line) => [
+    Markup.callbackButton(
+      formatLineButtonLabel(line),
+      `cold:lineSelect:${profileKey}:${encodeCallbackComponent(line.id)}`
+    ),
+  ]);
+
+  buttons.push([
+    Markup.callbackButton(t(language, 'backButton'), 'cold:menu'),
+    Markup.callbackButton(t(language, 'coldSetupCancelButton'), 'cold:cancel'),
+  ]);
+
+  const keyboard = Markup.inlineKeyboard(buttons).extra();
+  const text = t(language, 'coldSetupChooseLine');
+
+  await editOrReply(ctx, text, keyboard);
+}
+
+async function promptColdSipInput(ctx, user, language, { profileId, line }) {
+  const profileKey = encodeColdProfileKey(profileId);
+
+  userStates.set(Number(ctx.from.id), {
+    type: 'awaitingColdSipInput',
+    payload: { profileId, lineId: line.id },
+  });
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.callbackButton(t(language, 'backButton'), `cold:lineMenu:${profileKey}`)],
+    [Markup.callbackButton(t(language, 'coldSetupCancelButton'), 'cold:cancel')],
+  ]).extra();
+
+  const text = t(language, 'coldSetupEnterSip', {
+    lineTitle: line.title,
+    lineId: line.id,
+  });
+
+  await editOrReply(ctx, text, keyboard);
+}
+
+async function sendColdSipSelection(ctx, user, language, { profileId, line }) {
+  const sipOptions = getSipOptions(line);
+
+  if (!sipOptions.length) {
+    await promptColdSipInput(ctx, user, language, { profileId, line });
+    return;
+  }
+
+  clearUserState(ctx.from.id);
+
+  const profileKey = encodeColdProfileKey(profileId);
+  const buttons = chunk(sipOptions, 3).map((group) =>
+    group.map((sip) =>
+      Markup.callbackButton(
+        `☎️ ${sip}`,
+        `cold:sipSelect:${profileKey}:${encodeCallbackComponent(line.id)}:${encodeCallbackComponent(sip)}`
+      )
+    )
+  );
+
+  buttons.push([
+    Markup.callbackButton(
+      t(language, 'coldSetupSipManualButton'),
+      `cold:sipManual:${profileKey}:${encodeCallbackComponent(line.id)}`
+    ),
+  ]);
+
+  buttons.push([
+    Markup.callbackButton(t(language, 'backButton'), `cold:lineMenu:${profileKey}`),
+    Markup.callbackButton(t(language, 'coldSetupCancelButton'), 'cold:cancel'),
+  ]);
+
+  const keyboard = Markup.inlineKeyboard(buttons).extra();
+  const text = t(language, 'coldSetupChooseSip', {
+    lineTitle: line.title,
+    lineId: line.id,
+  });
+
+  await editOrReply(ctx, text, keyboard);
+}
+
+async function promptColdUsername(ctx, user, language, { profileId, line, sip }) {
+  const profileKey = encodeColdProfileKey(profileId);
+
+  userStates.set(Number(ctx.from.id), {
+    type: 'awaitingColdUsername',
+    payload: { profileId, lineId: line.id, sip },
+  });
+
+  const keyboard = Markup.inlineKeyboard([
+    [
+      Markup.callbackButton(
+        t(language, 'backButton'),
+        `cold:sipBack:${profileKey}:${encodeCallbackComponent(line.id)}`
+      ),
+    ],
+    [Markup.callbackButton(t(language, 'coldSetupCancelButton'), 'cold:cancel')],
+  ]).extra();
+
+  const text = t(language, 'coldSetupEnterUsername');
+  await editOrReply(ctx, text, keyboard);
+}
+
+async function resolveColdActionUser(ctx) {
+  if (isAdmin(ctx.from.id)) {
+    await ctx.answerCbQuery();
+    return null;
+  }
+
+  if (await isStopWork(ctx)) {
+    await ctx.answerCbQuery('🚧');
+    clearUserState(ctx.from.id);
+    return null;
+  }
+
+  const user = await repository.getUser(ctx.from.id);
+
+  if (!user) {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    await ctx.reply(t('ru', 'userNotFound'));
+    return null;
+  }
+
+  const language = getUserLanguage(user);
+
+  if (user.status === 'banned') {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    await ctx.reply(t(language, 'banned'));
+    return null;
+  }
+
+  if (user.status !== 'active') {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    await ctx.reply(t(language, 'notActive'));
+    return null;
+  }
+
+  if (!user.language) {
+    await ctx.answerCbQuery('🌐', { show_alert: true });
+    await promptLanguageSelection(user.id, language);
+    return null;
+  }
+
+  return { user, language };
 }
 
 function languageSelectionKeyboard() {
@@ -1494,6 +1810,100 @@ async function processUserState(ctx, providedUser) {
     return true;
   }
 
+  if (state.type === 'awaitingColdSipInput') {
+    const value = text.trim();
+    const { profileId, lineId } = state.payload || {};
+
+    if (!lineId) {
+      clearUserState(ctx.from.id);
+      await ctx.reply(t(language, 'genericError'));
+      return true;
+    }
+
+    if (!value) {
+      await ctx.reply(t(language, 'coldSetupInvalidSip'));
+      return true;
+    }
+
+    if (!user.lineIds.includes(lineId)) {
+      clearUserState(ctx.from.id);
+      await ctx.reply(t(language, 'noAccessLine'));
+      return true;
+    }
+
+    const line = await repository.getLine(lineId);
+
+    if (!line) {
+      clearUserState(ctx.from.id);
+      await ctx.reply(t(language, 'lineMissing'));
+      return true;
+    }
+
+    await promptColdUsername(ctx, user, language, {
+      profileId,
+      line,
+      sip: value,
+    });
+    return true;
+  }
+
+  if (state.type === 'awaitingColdUsername') {
+    const normalized = normalizeColdUsername(text);
+
+    if (!normalized) {
+      await ctx.reply(t(language, 'coldSetupInvalidUsername'));
+      return true;
+    }
+
+    const payload = state.payload || {};
+    const { profileId, lineId, sip } = payload;
+
+    if (!lineId || !sip) {
+      clearUserState(ctx.from.id);
+      await ctx.reply(t(language, 'genericError'));
+      return true;
+    }
+
+    try {
+      const profile = await repository.saveColdProfileForOwner(user.id, {
+        profileId,
+        lineId,
+        sip,
+        username: `@${normalized}`,
+      });
+
+      clearUserState(ctx.from.id);
+
+      const line = await repository.getLine(profile.lineId);
+      const successText = t(language, 'coldSetupSaved', {
+        username: profile.username || `@${profile.normalizedUsername}`,
+        lineTitle: line ? line.title : undefined,
+        lineId: profile.lineId,
+        sip: profile.sip,
+      });
+
+      await ctx.reply(successText);
+
+      const freshUser = await repository.getUser(user.id);
+      await sendColdOverview(ctx, freshUser || user, language);
+    } catch (error) {
+      if (error && error.code === 'COLD_USERNAME_CONFLICT') {
+        await ctx.reply(t(language, 'coldSetupUsernameInUse'));
+      } else if (error && error.code === 'COLD_LINE_FORBIDDEN') {
+        clearUserState(ctx.from.id);
+        await ctx.reply(t(language, 'noAccessLine'));
+      } else if (error && error.code === 'COLD_INVALID_SIP') {
+        await ctx.reply(t(language, 'coldSetupInvalidSip'));
+      } else {
+        console.error('Failed to save cold profile', error);
+        clearUserState(ctx.from.id);
+        await ctx.reply(t(language, 'genericError'));
+      }
+    }
+
+    return true;
+  }
+
   if (state.type === 'awaitingComplaintSip') {
     const line = await repository.getLine(state.payload.lineId);
 
@@ -1817,39 +2227,18 @@ bot.hears(/холодки|cold\s+agents?/i, async (ctx) => {
     await ctx.reply(t(language, 'notActive'));
     return;
   }
-
-  const coldProfile = await repository.getColdProfileByUserId(user.id);
-  if (coldProfile) {
-    await ctx.reply(t(language, 'genericError'));
+  if (!user.language) {
+    await promptLanguageSelection(user.id, language);
     return;
   }
 
-  const [coldProfiles, lines] = await Promise.all([
-    repository.getColdProfilesByOwner(user.id),
-    repository.getLines(),
-  ]);
-
-  const lineMap = new Map(lines.map((line) => [line.id, line]));
-  const listItems = coldProfiles.map((profile) => {
-    const line = lineMap.get(profile.lineId);
-    const lineLabel = line ? line.title || line.id : profile.lineId;
-    const statusKey = profile.userId
-      ? 'coldProfileStatusActive'
-      : 'coldProfileStatusPending';
-    const status = t(language, statusKey);
-    const username = profile.username || `@${profile.normalizedUsername}`;
-    return `• ${username} — ${lineLabel}, SIP ${profile.sip} (${status})`;
-  });
-
-  const parts = [t(language, 'coldInstructions')];
-
-  if (listItems.length) {
-    parts.push('', t(language, 'coldListTitle'), ...listItems);
-  } else {
-    parts.push('', t(language, 'coldNoProfiles'));
+  const coldProfile = await repository.getColdProfileByUserId(user.id);
+  if (coldProfile) {
+    await ctx.reply(t(language, 'coldInstructions'));
+    return;
   }
 
-  await ctx.reply(parts.join('\n'));
+  await sendColdOverview(ctx, user, language);
 });
 
 bot.action('settings:language', async (ctx) => {
@@ -1960,6 +2349,288 @@ bot.action('settings:menu', async (ctx) => {
 
   await ctx.answerCbQuery();
   await sendSettingsMenu(ctx, language, { edit: true });
+});
+
+bot.action('cold:menu', async (ctx) => {
+  const resolved = await resolveColdActionUser(ctx);
+  if (!resolved) {
+    return;
+  }
+
+  const { user, language } = resolved;
+  await ctx.answerCbQuery('❄️');
+  await sendColdOverview(ctx, user, language, { edit: true });
+});
+
+bot.action('cold:setup:new', async (ctx) => {
+  const resolved = await resolveColdActionUser(ctx);
+  if (!resolved) {
+    return;
+  }
+
+  const { user, language } = resolved;
+  await ctx.answerCbQuery('➕');
+  await sendColdLineSelection(ctx, user, language, { profileId: null });
+});
+
+bot.action(/^cold:profile:(.+)$/i, async (ctx) => {
+  const resolved = await resolveColdActionUser(ctx);
+  if (!resolved) {
+    return;
+  }
+
+  const profileId = decodeCallbackComponent(ctx.match[1]);
+  const { user, language } = resolved;
+
+  const profile = await repository.getColdProfileById(profileId);
+
+  if (!profile || Number(profile.ownerId) !== Number(user.id)) {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    return;
+  }
+
+  const line = await repository.getLine(profile.lineId);
+  const statusKey = profile.userId
+    ? 'coldProfileStatusActive'
+    : 'coldProfileStatusPending';
+  const status = t(language, statusKey);
+  const text = t(language, 'coldProfileDetails', {
+    username: profile.username || `@${profile.normalizedUsername}`,
+    lineTitle: line ? line.title : undefined,
+    lineId: profile.lineId,
+    sip: profile.sip,
+    status,
+  });
+
+  const keyboard = Markup.inlineKeyboard([
+    [
+      Markup.callbackButton(
+        t(language, 'coldSetupManageButton'),
+        `cold:setup:edit:${encodeCallbackComponent(profile.id)}`
+      ),
+    ],
+    [
+      Markup.callbackButton(
+        t(language, 'coldSetupRemoveButton'),
+        `cold:remove:${encodeCallbackComponent(profile.id)}`
+      ),
+    ],
+    [Markup.callbackButton(t(language, 'backButton'), 'cold:menu')],
+  ]).extra();
+
+  await ctx.answerCbQuery('❄️');
+  await editOrReply(ctx, text, keyboard);
+});
+
+bot.action(/^cold:setup:edit:(.+)$/i, async (ctx) => {
+  const resolved = await resolveColdActionUser(ctx);
+  if (!resolved) {
+    return;
+  }
+
+  const profileId = decodeCallbackComponent(ctx.match[1]);
+  const { user, language } = resolved;
+
+  const profile = await repository.getColdProfileById(profileId);
+
+  if (!profile || Number(profile.ownerId) !== Number(user.id)) {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    return;
+  }
+
+  await ctx.answerCbQuery('⚙️');
+  await sendColdLineSelection(ctx, user, language, { profileId });
+});
+
+bot.action(/^cold:lineMenu:(.+)$/i, async (ctx) => {
+  const resolved = await resolveColdActionUser(ctx);
+  if (!resolved) {
+    return;
+  }
+
+  const profileId = decodeColdProfileKey(ctx.match[1]);
+  const { user, language } = resolved;
+
+  await ctx.answerCbQuery('⬅️');
+  await sendColdLineSelection(ctx, user, language, { profileId });
+});
+
+bot.action(/^cold:lineSelect:([^:]+):(.+)$/i, async (ctx) => {
+  const resolved = await resolveColdActionUser(ctx);
+  if (!resolved) {
+    return;
+  }
+
+  const profileId = decodeColdProfileKey(ctx.match[1]);
+  const lineId = decodeCallbackComponent(ctx.match[2]);
+  const { user, language } = resolved;
+
+  if (!user.lineIds.includes(lineId)) {
+    await ctx.answerCbQuery(t(language, 'noAccessLine'), { show_alert: true });
+    return;
+  }
+
+  const line = await repository.getLine(lineId);
+
+  if (!line) {
+    await ctx.answerCbQuery(t(language, 'lineMissing'), { show_alert: true });
+    return;
+  }
+
+  await ctx.answerCbQuery('📞');
+  await sendColdSipSelection(ctx, user, language, { profileId, line });
+});
+
+bot.action(/^cold:sipSelect:([^:]+):([^:]+):(.+)$/i, async (ctx) => {
+  const resolved = await resolveColdActionUser(ctx);
+  if (!resolved) {
+    return;
+  }
+
+  const profileId = decodeColdProfileKey(ctx.match[1]);
+  const lineId = decodeCallbackComponent(ctx.match[2]);
+  const sip = decodeCallbackComponent(ctx.match[3]);
+  const { user, language } = resolved;
+
+  if (!user.lineIds.includes(lineId)) {
+    await ctx.answerCbQuery(t(language, 'noAccessLine'), { show_alert: true });
+    return;
+  }
+
+  const line = await repository.getLine(lineId);
+
+  if (!line) {
+    await ctx.answerCbQuery(t(language, 'lineMissing'), { show_alert: true });
+    return;
+  }
+
+  const sipOptions = getSipOptions(line);
+
+  if (sipOptions.length && !sipOptions.includes(sip)) {
+    await ctx.answerCbQuery(t(language, 'complaintSipInvalid'), { show_alert: true });
+    return;
+  }
+
+  await ctx.answerCbQuery('☎️');
+  await promptColdUsername(ctx, user, language, { profileId, line, sip });
+});
+
+bot.action(/^cold:sipManual:([^:]+):(.+)$/i, async (ctx) => {
+  const resolved = await resolveColdActionUser(ctx);
+  if (!resolved) {
+    return;
+  }
+
+  const profileId = decodeColdProfileKey(ctx.match[1]);
+  const lineId = decodeCallbackComponent(ctx.match[2]);
+  const { user, language } = resolved;
+
+  if (!user.lineIds.includes(lineId)) {
+    await ctx.answerCbQuery(t(language, 'noAccessLine'), { show_alert: true });
+    return;
+  }
+
+  const line = await repository.getLine(lineId);
+
+  if (!line) {
+    await ctx.answerCbQuery(t(language, 'lineMissing'), { show_alert: true });
+    return;
+  }
+
+  await ctx.answerCbQuery('✏️');
+  await promptColdSipInput(ctx, user, language, { profileId, line });
+});
+
+bot.action(/^cold:sipBack:([^:]+):(.+)$/i, async (ctx) => {
+  const resolved = await resolveColdActionUser(ctx);
+  if (!resolved) {
+    return;
+  }
+
+  const profileId = decodeColdProfileKey(ctx.match[1]);
+  const lineId = decodeCallbackComponent(ctx.match[2]);
+  const { user, language } = resolved;
+
+  const line = await repository.getLine(lineId);
+
+  if (!line) {
+    await ctx.answerCbQuery(t(language, 'lineMissing'), { show_alert: true });
+    return;
+  }
+
+  clearUserState(ctx.from.id);
+  await ctx.answerCbQuery('⬅️');
+  await sendColdSipSelection(ctx, user, language, { profileId, line });
+});
+
+bot.action('cold:cancel', async (ctx) => {
+  const resolved = await resolveColdActionUser(ctx);
+  if (!resolved) {
+    return;
+  }
+
+  const { user, language } = resolved;
+  clearUserState(ctx.from.id);
+  await ctx.answerCbQuery('❌');
+  await editOrReply(ctx, t(language, 'coldSetupCancelled'));
+  await sendColdOverview(ctx, user, language);
+});
+
+bot.action(/^cold:remove:(.+)$/i, async (ctx) => {
+  const resolved = await resolveColdActionUser(ctx);
+  if (!resolved) {
+    return;
+  }
+
+  const profileId = decodeCallbackComponent(ctx.match[1]);
+  const { user, language } = resolved;
+  const profile = await repository.getColdProfileById(profileId);
+
+  if (!profile || Number(profile.ownerId) !== Number(user.id)) {
+    await ctx.answerCbQuery('🚫', { show_alert: true });
+    return;
+  }
+
+  const keyboard = Markup.inlineKeyboard([
+    [
+      Markup.callbackButton(
+        t(language, 'coldRemoveConfirmButton'),
+        `cold:remove:confirm:${encodeCallbackComponent(profile.id)}`
+      ),
+    ],
+    [Markup.callbackButton(t(language, 'backButton'), `cold:profile:${encodeCallbackComponent(profile.id)}`)],
+    [Markup.callbackButton(t(language, 'coldSetupCancelButton'), 'cold:cancel')],
+  ]).extra();
+
+  await ctx.answerCbQuery('⚠️');
+  await editOrReply(ctx, t(language, 'coldRemoveConfirm'), keyboard);
+});
+
+bot.action(/^cold:remove:confirm:(.+)$/i, async (ctx) => {
+  const resolved = await resolveColdActionUser(ctx);
+  if (!resolved) {
+    return;
+  }
+
+  const profileId = decodeCallbackComponent(ctx.match[1]);
+  const { user, language } = resolved;
+
+  try {
+    const removed = await repository.deleteColdProfile(profileId, user.id);
+
+    if (!removed) {
+      await ctx.answerCbQuery('🚫', { show_alert: true });
+      return;
+    }
+
+    clearUserState(ctx.from.id);
+    await ctx.answerCbQuery('🗑');
+    await editOrReply(ctx, t(language, 'coldRemoved'));
+    await sendColdOverview(ctx, user, language);
+  } catch (error) {
+    console.error('Failed to remove cold profile', error);
+    await ctx.answerCbQuery('⚠️', { show_alert: true });
+  }
 });
 
 bot.action(/^complaint:(.+)$/i, async (ctx) => {

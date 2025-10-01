@@ -474,6 +474,179 @@ async function getColdProfileByUserId(userId) {
   );
 }
 
+async function getColdProfileById(profileId) {
+  const db = await readDb();
+  return db.data.coldProfiles.find((item) => item.id === profileId) || null;
+}
+
+async function saveColdProfileForOwner(ownerId, { profileId, lineId, sip, username }) {
+  const db = await readDb();
+  const owner = await assertUserExists(db, ownerId);
+  const normalizedUsername = normalizeUsername(username);
+
+  if (!normalizedUsername) {
+    const error = new Error('Invalid username');
+    error.code = 'COLD_INVALID_USERNAME';
+    throw error;
+  }
+
+  const formattedUsername = formatDisplayUsername(username);
+  const targetLine = db.data.lines.find((line) => line.id === lineId);
+
+  if (!targetLine) {
+    const error = new Error(`Line ${lineId} not found`);
+    error.code = 'COLD_LINE_NOT_FOUND';
+    throw error;
+  }
+
+  if (!owner.lineIds.includes(lineId)) {
+    const error = new Error(`User ${ownerId} has no access to line ${lineId}`);
+    error.code = 'COLD_LINE_FORBIDDEN';
+    throw error;
+  }
+
+  const trimmedSip = typeof sip === 'string' ? sip.trim() : String(sip || '').trim();
+
+  if (!trimmedSip) {
+    const error = new Error('Invalid SIP');
+    error.code = 'COLD_INVALID_SIP';
+    throw error;
+  }
+
+  const conflictingProfile = db.data.coldProfiles.find(
+    (item) =>
+      item.normalizedUsername === normalizedUsername &&
+      (!profileId || item.id !== profileId)
+  );
+
+  if (conflictingProfile && Number(conflictingProfile.ownerId) !== Number(ownerId)) {
+    const error = new Error('Username already used');
+    error.code = 'COLD_USERNAME_CONFLICT';
+    throw error;
+  }
+
+  let profile = null;
+  const nowValue = now();
+
+  if (profileId) {
+    profile = db.data.coldProfiles.find(
+      (item) => item.id === profileId && Number(item.ownerId) === Number(ownerId)
+    );
+
+    if (!profile) {
+      const error = new Error(`Cold profile ${profileId} not found`);
+      error.code = 'COLD_PROFILE_NOT_FOUND';
+      throw error;
+    }
+  }
+
+  if (!profile) {
+    profile = {
+      id: nanoid(10),
+      ownerId: owner.id,
+      lineId,
+      sip: trimmedSip,
+      username: formattedUsername,
+      normalizedUsername,
+      userId: null,
+      createdAt: nowValue,
+      updatedAt: nowValue,
+    };
+    db.data.coldProfiles.push(profile);
+  } else {
+    const previousLineId = profile.lineId;
+    const previousUserId = profile.userId;
+    const previousUsername = profile.normalizedUsername;
+
+    profile.lineId = lineId;
+    profile.sip = trimmedSip;
+    profile.username = formattedUsername;
+    profile.normalizedUsername = normalizedUsername;
+    profile.updatedAt = nowValue;
+
+    if (previousUsername !== normalizedUsername && previousUserId) {
+      const coldUser = db.data.users.find(
+        (user) => Number(user.id) === Number(previousUserId)
+      );
+
+      if (coldUser) {
+        coldUser.lineIds = coldUser.lineIds.filter((id) => id !== previousLineId);
+        coldUser.updatedAt = now();
+      }
+
+      const previousLine = db.data.lines.find((line) => line.id === previousLineId);
+      if (previousLine) {
+        previousLine.userIds = previousLine.userIds.filter(
+          (id) => Number(id) !== Number(previousUserId)
+        );
+        previousLine.updatedAt = nowValue;
+      }
+
+      profile.userId = null;
+    } else if (previousLineId !== lineId && previousUserId) {
+      const previousLine = db.data.lines.find((line) => line.id === previousLineId);
+
+      if (previousLine) {
+        previousLine.userIds = previousLine.userIds.filter(
+          (id) => Number(id) !== Number(previousUserId)
+        );
+        previousLine.updatedAt = nowValue;
+      }
+
+      if (!targetLine.userIds.includes(previousUserId)) {
+        targetLine.userIds.push(previousUserId);
+      }
+
+      const coldUser = db.data.users.find(
+        (user) => Number(user.id) === Number(previousUserId)
+      );
+
+      if (coldUser) {
+        coldUser.lineIds = [lineId];
+        coldUser.status = 'active';
+        coldUser.updatedAt = nowValue;
+      }
+    }
+  }
+
+  targetLine.updatedAt = nowValue;
+  await writeDb(db);
+  return profile;
+}
+
+async function deleteColdProfile(profileId, ownerId) {
+  const db = await readDb();
+  const index = db.data.coldProfiles.findIndex(
+    (item) => item.id === profileId && Number(item.ownerId) === Number(ownerId)
+  );
+
+  if (index === -1) {
+    return false;
+  }
+
+  const [profile] = db.data.coldProfiles.splice(index, 1);
+
+  if (profile.userId) {
+    const coldUser = db.data.users.find(
+      (user) => Number(user.id) === Number(profile.userId)
+    );
+
+    if (coldUser) {
+      coldUser.lineIds = coldUser.lineIds.filter((id) => id !== profile.lineId);
+      coldUser.updatedAt = now();
+    }
+
+    const line = db.data.lines.find((item) => item.id === profile.lineId);
+    if (line) {
+      line.userIds = line.userIds.filter((id) => Number(id) !== Number(profile.userId));
+      line.updatedAt = now();
+    }
+  }
+
+  await writeDb(db);
+  return true;
+}
+
 async function createComplaint({ userId, lineId, sip, message, coldProfileId }) {
   const db = await readDb();
 
@@ -615,6 +788,9 @@ module.exports = {
   getColdProfileByUsername,
   setColdProfileUser,
   getColdProfileByUserId,
+  getColdProfileById,
+  saveColdProfileForOwner,
+  deleteColdProfile,
   createComplaint,
   setComplaintLogInfo,
   getComplaintById,
