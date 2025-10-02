@@ -652,6 +652,26 @@ function t(language, key, params = {}) {
   return value;
 }
 
+function createButtonTriggers(key, basePatterns = []) {
+  const labels = LANGUAGE_CODES.map((code) => t(code, key)).filter(Boolean);
+  return [...basePatterns, ...labels];
+}
+
+const complaintTriggers = createButtonTriggers('complaintButton', [
+  /жалоб[ауеы]?/i,
+  /complain/i,
+]);
+
+const settingsTriggers = createButtonTriggers('settingsButton', [
+  /настро(йки|ек)/i,
+  /settings?/i,
+]);
+
+const coldTriggers = createButtonTriggers('coldButton', [
+  /холодк[аи]/i,
+  /cold\s+agents?/i,
+]);
+
 function formatDateForLanguage(isoString, language) {
   if (!isoString) {
     return null;
@@ -2175,7 +2195,7 @@ bot.command('admin', async (ctx) => {
   await ctx.reply(t('ru', 'adminPanel'), adminMenuKeyboard());
 });
 
-bot.hears(/жалоба|complaint/i, async (ctx) => {
+bot.hears(complaintTriggers, async (ctx) => {
   if (isAdmin(ctx.from.id)) {
     return;
   }
@@ -2240,7 +2260,7 @@ bot.hears(/жалоба|complaint/i, async (ctx) => {
   await sendComplaintLineMenu(ctx, user, language);
 });
 
-bot.hears(/настройки|settings/i, async (ctx) => {
+bot.hears(settingsTriggers, async (ctx) => {
   if (isAdmin(ctx.from.id)) {
     return;
   }
@@ -2272,7 +2292,7 @@ bot.hears(/настройки|settings/i, async (ctx) => {
   await sendSettingsMenu(ctx, language);
 });
 
-bot.hears(/холодки|cold\s+agents?/i, async (ctx) => {
+bot.hears(coldTriggers, async (ctx) => {
   if (isAdmin(ctx.from.id)) {
     return;
   }
