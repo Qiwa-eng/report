@@ -2060,7 +2060,7 @@ bot.use(async (ctx, next) => {
   }
 
   const originalAnswerCbQuery = ctx.answerCbQuery.bind(ctx);
-  let reminderSent = false;
+  let answered = false;
   let userPromise = null;
 
   const ensureUser = async () => {
@@ -2076,23 +2076,12 @@ bot.use(async (ctx, next) => {
     return userPromise;
   };
 
-  const extractOptions = (args) => {
-    if (args.length >= 2 && typeof args[1] === 'object' && args[1] !== null) {
-      return args[1];
-    }
-
-    if (args.length === 1 && typeof args[0] === 'object' && args[0] !== null) {
-      return args[0];
-    }
-
-    return undefined;
-  };
-
   const sendReminder = async (options) => {
     try {
       const user = await ensureUser();
       const language = getUserLanguage(user);
       const reminder = t(language, 'menuReminder');
+      answered = true;
       await originalAnswerCbQuery(reminder, options);
     } catch (error) {
       const description =
@@ -2108,15 +2097,18 @@ bot.use(async (ctx, next) => {
   };
 
   ctx.answerCbQuery = async (...args) => {
-    reminderSent = true;
-    const options = extractOptions(args);
-    await sendReminder(options);
+    try {
+      await originalAnswerCbQuery(...args);
+      answered = true;
+    } catch (error) {
+      throw error;
+    }
   };
 
   try {
     await next();
   } finally {
-    if (!reminderSent) {
+    if (!answered) {
       await sendReminder();
     }
   }
