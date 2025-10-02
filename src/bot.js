@@ -2053,6 +2053,75 @@ async function processUserState(ctx, providedUser) {
   return false;
 }
 
+bot.use(async (ctx, next) => {
+  if (!ctx.callbackQuery || !ctx.from || isAdmin(ctx.from.id)) {
+    await next();
+    return;
+  }
+
+  const originalAnswerCbQuery = ctx.answerCbQuery.bind(ctx);
+  let reminderSent = false;
+  let userPromise = null;
+
+  const ensureUser = async () => {
+    if (!userPromise) {
+      userPromise = repository
+        .getUser(ctx.from.id)
+        .catch((error) => {
+          console.error('Failed to load user for menu reminder', error);
+          return null;
+        });
+    }
+
+    return userPromise;
+  };
+
+  const extractOptions = (args) => {
+    if (args.length >= 2 && typeof args[1] === 'object' && args[1] !== null) {
+      return args[1];
+    }
+
+    if (args.length === 1 && typeof args[0] === 'object' && args[0] !== null) {
+      return args[0];
+    }
+
+    return undefined;
+  };
+
+  const sendReminder = async (options) => {
+    try {
+      const user = await ensureUser();
+      const language = getUserLanguage(user);
+      const reminder = t(language, 'menuReminder');
+      await originalAnswerCbQuery(reminder, options);
+    } catch (error) {
+      const description =
+        getNestedValue(error, ['response', 'description']) ||
+        getNestedValue(error, ['on', 'description']);
+
+      if (description && (description.includes('QUERY_ID_INVALID') || description.includes('query is too old'))) {
+        return;
+      }
+
+      console.error('Failed to send menu reminder on button click', error);
+    }
+  };
+
+  ctx.answerCbQuery = async (...args) => {
+    reminderSent = true;
+    const options = extractOptions(args);
+    await sendReminder(options);
+  };
+
+  try {
+    await next();
+  } finally {
+    if (!reminderSent) {
+      await sendReminder();
+    }
+  }
+});
+
 bot.start(async (ctx) => {
   let user = await repository.upsertUser(ctx.from);
 
